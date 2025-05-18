@@ -6,7 +6,8 @@ import os
 
 # 初期化
 pygame.init()
-WIDTH, HEIGHT = 800, 600
+SCALE = 3  # スケール倍率
+WIDTH, HEIGHT = 160 * SCALE, 144 * SCALE  # 3倍スケールに変更
 screen = pygame.display.set_mode((WIDTH, HEIGHT))
 pygame.display.set_caption("ポケモン風ゲーム")
 clock = pygame.time.Clock()
@@ -14,6 +15,7 @@ clock = pygame.time.Clock()
 # 色の定義
 BLACK = (0, 0, 0)
 WHITE = (255, 255, 255)
+LIGHT_GRAY = (220, 220, 220)  # 薄いグレー追加
 GREEN = (0, 255, 0)
 BLUE = (0, 0, 255)
 RED = (255, 0, 0)
@@ -78,16 +80,16 @@ def get_font(size):
 # プレイヤークラス
 class Player:
     def __init__(self):
-        self.x = 400
-        self.y = 300
-        self.speed = 5
-        self.width = 40
-        self.height = 40
+        self.x = 80 * SCALE  # 画面中央あたりに調整
+        self.y = 70 * SCALE
+        self.speed = 3 * SCALE  # 移動速度もスケールに合わせる
+        self.width = 20 * SCALE  # サイズをスケールに合わせる
+        self.height = 20 * SCALE
         self.direction = "down"
         self.pokemon = [Pokemon("ヒトカゲ", "火", 20, ["ひのこ", "ひっかく"], [10, 5])]
         # プレイヤー画像を読み込む
         try:
-            self.image = pygame.image.load("red_front.png")
+            self.image = pygame.image.load("img/red_front.png")
             # 画像サイズを調整
             self.image = pygame.transform.scale(self.image, (self.width, self.height))
         except pygame.error:
@@ -165,13 +167,13 @@ class WildPokemon:
         # ポケモンの画像を読み込む
         try:
             if self.pokemon.name == "ゼニガメ":
-                self.image = pygame.image.load("zenigame.png")
+                self.image = pygame.image.load("img/zenigame.png")
             elif self.pokemon.name == "ピカチュウ":
-                self.image = pygame.image.load("pikachu.png")
+                self.image = pygame.image.load("img/pikachu.png")
             elif self.pokemon.name == "フシギダネ":
-                self.image = pygame.image.load("hushigidane.png")
+                self.image = pygame.image.load("img/hushigidane.png")
             elif self.pokemon.name == "イーブイ":
-                self.image = pygame.image.load("eevee.png")
+                self.image = pygame.image.load("img/eevee.png")
             else:
                 # その他のポケモンの場合、デフォルト画像を使用するか、他の画像を用意する
                 self.image = None
@@ -187,7 +189,9 @@ class WildPokemon:
 class GameState:
     FIELD = 0
     BATTLE = 1
-    
+    BATTLE_SELECT = 0  # 技選択中
+    BATTLE_MESSAGE = 1  # メッセージ表示中
+
     def __init__(self):
         self.state = self.FIELD
         self.battle_timer = 0
@@ -195,6 +199,12 @@ class GameState:
         self.battle_message = ""
         self.player_turn = True
         self.selected_move = 0
+        self.battle_state = self.BATTLE_SELECT  # 追加
+        self.battle_end_flag = False  # 追加
+        # テキスト表示用の変数
+        self.displayed_chars = 0  # 現在表示している文字数
+        self.char_display_timer = 0  # 文字表示用タイマー
+        self.full_message_displayed = False  # メッセージがすべて表示されたかどうか
 
 # フィールドを描画
 def draw_field():
@@ -204,53 +214,117 @@ def draw_field():
     # 道を描画
     pygame.draw.rect(screen, (210, 180, 140), (WIDTH // 4, 0, WIDTH // 2, HEIGHT))
 
-# バトル画面を描画
 def draw_battle_screen(player, wild_pokemon, state):
     # バトル背景
-    screen.fill((220, 220, 220))
-    
-    # 野生のポケモン情報
-    pygame.draw.rect(screen, WHITE, (50, 50, 300, 100))
-    font = get_font(30)
+    screen.fill(WHITE)
+
+    # 野生のポケモン情報（左上）
+    info_width = 60 * SCALE
+    pygame.draw.rect(screen, LIGHT_GRAY, (5 * SCALE, 5 * SCALE, info_width, 25 * SCALE))
+    font = get_font(15)
     text = font.render(f"{wild_pokemon.pokemon.name} Lv.5", True, BLACK)
-    screen.blit(text, (70, 60))
-    text = font.render(f"HP: {wild_pokemon.pokemon.hp}/{wild_pokemon.pokemon.max_hp}", True, BLACK)
-    screen.blit(text, (70, 100))
-    
+
+    info_pokemon_name_x = 10 * SCALE
+    info_pokemon_name_y = 8 * SCALE
+    screen.blit(text, (info_pokemon_name_x, info_pokemon_name_y))
+
+    # HPバー（野生ポケモン）
+    pygame.draw.rect(screen, LIGHT_GRAY, (5 * SCALE, 30 * SCALE, info_width, 10 * SCALE))
+    hp_ratio = max(0, wild_pokemon.pokemon.hp / wild_pokemon.pokemon.max_hp)
+    pygame.draw.rect(screen, GREEN, (5 * SCALE, 30 * SCALE, int(info_width * hp_ratio), 10 * SCALE))
+
+    # HP数値表示
+    font_hp = get_font(15)
+    hp_text = f"{wild_pokemon.pokemon.hp}/{wild_pokemon.pokemon.max_hp}"
+    text_hp = font_hp.render(hp_text, True, BLACK)
+    screen.blit(text_hp, (info_pokemon_name_x, info_pokemon_name_y + 20))
+
     # 野生のポケモン画像を描画
     if wild_pokemon.image:
-        screen.blit(wild_pokemon.image, (500, 50))
-    
+        image = pygame.transform.scale(wild_pokemon.image, (50 * SCALE, 50 * SCALE))
+        screen.blit(image, (90 * SCALE, -10))
+
     # プレイヤーのポケモン情報
-    pygame.draw.rect(screen, WHITE, (450, 300, 300, 100))
-    text = font.render(f"{player.pokemon[0].name} Lv.5", True, BLACK)
-    screen.blit(text, (470, 310))
-    text = font.render(f"HP: {player.pokemon[0].hp}/{player.pokemon[0].max_hp}", True, BLACK)
-    screen.blit(text, (470, 350))
+    player_info_x = 85 * SCALE
+    player_info_y = 55 * SCALE
+    pygame.draw.rect(screen, LIGHT_GRAY, (player_info_x, player_info_y, info_width, 25 * SCALE))
     
+    player_hp_text_x = 90 * SCALE
+    text = font.render(f"{player.pokemon[0].name} Lv.5", True, BLACK)
+    screen.blit(text, (player_hp_text_x, player_info_y + 3 * SCALE))
+
+    # HPバー（プレイヤーポケモン）
+    hp_bar_y = player_info_y + 25 * SCALE
+    pygame.draw.rect(screen, LIGHT_GRAY, (85 * SCALE, hp_bar_y, info_width, 8 * SCALE))
+    hp_ratio = max(0, player.pokemon[0].hp / player.pokemon[0].max_hp)
+    pygame.draw.rect(screen, GREEN, (85 * SCALE, hp_bar_y, int(info_width * hp_ratio), 8 * SCALE))
+
+    # HP数値表示
+    hp_text_p = f"{player.pokemon[0].hp}/{player.pokemon[0].max_hp}"
+    text_hp_p = font_hp.render(hp_text_p, True, BLACK)
+    screen.blit(text_hp_p, (player_hp_text_x, player_info_y + 30))
+
     # プレイヤーのポケモン画像を描画
     try:
-        hitokage_image = pygame.image.load("hitokage.png")
-        hitokage_image = pygame.transform.scale(hitokage_image, (120, 120))
-        screen.blit(hitokage_image, (50, 300))
+        hitokage_image = pygame.image.load("img/hitokage.png")
+        hitokage_image = pygame.transform.scale(hitokage_image, (40 * SCALE, 40 * SCALE))
+        screen.blit(hitokage_image, (20 * SCALE, 56 * SCALE))
     except pygame.error:
         print("ヒトカゲの画像の読み込みに失敗しました")
-    
-    # コマンドメニュー
-    pygame.draw.rect(screen, WHITE, (50, 420, 700, 150))
-    
-    # バトルメッセージを先に描画（コマンドメニューの中に表示）
-    font_message = get_font(24)  # メッセージ用に少し小さいフォント
-    text = font_message.render(state.battle_message, True, BLACK)
-    screen.blit(text, (100, 430))  # メッセージを上部に表示
-    
-    if state.player_turn:
-        # 技選択メニュー
+
+    # バトルメッセージを表示する場合
+    if state.battle_state == GameState.BATTLE_MESSAGE:
+        try:
+            message_image = pygame.image.load("img/message_all.png")
+            message_image = pygame.transform.scale(message_image, (WIDTH, 49 * SCALE))
+            screen.blit(message_image, (0, HEIGHT - 49 * SCALE))
+        except pygame.error:
+            print("message_allの画像の読み込みに失敗しました")
+        font_message = get_font(14)
+        
+        # 1文字ずつ表示する処理
+        current_time = pygame.time.get_ticks()
+        # 文字表示タイマーが設定されていない場合は初期化
+        if state.char_display_timer == 0:
+            state.char_display_timer = current_time
+            state.displayed_chars = 0
+            state.full_message_displayed = False
+        
+        # 一定時間ごとに表示する文字数を増やす（文字送りの速度調整）
+        if not state.full_message_displayed and current_time - state.char_display_timer > 50:  # 50ミリ秒ごとに1文字表示
+            state.displayed_chars += 1
+            state.char_display_timer = current_time
+            
+            # 全ての文字を表示したかチェック
+            if state.displayed_chars >= len(state.battle_message):
+                state.displayed_chars = len(state.battle_message)
+                state.full_message_displayed = True
+        
+        # 現在表示すべき文字列を取得
+        displayed_text = state.battle_message[:state.displayed_chars]
+        text = font_message.render(displayed_text, True, BLACK)
+        screen.blit(text, (10 * SCALE, HEIGHT - 49 * SCALE + 10 * SCALE))
+    elif state.battle_state == GameState.BATTLE_SELECT:
+        try:
+            message_image = pygame.image.load("img/message_half.png")
+            message_image = pygame.transform.scale(message_image, (WIDTH, 49 * SCALE))
+            screen.blit(message_image, (0, HEIGHT - 49 * SCALE))
+        except pygame.error:
+            print("message_halfの画像の読み込みに失敗しました")
+        font_moves = get_font(14)  # フォントサイズを2アップ
         for i, move in enumerate(player.pokemon[0].moves):
+            # まず▶︎マークを表示（選択中の場合のみ）
+            mark_x = WIDTH // 2 + 1 * SCALE
+            text_x = WIDTH // 2 + 8 * SCALE  # テキストの開始位置を固定
+            text_y = HEIGHT - 49 * SCALE + 10 * SCALE + i * 10 * SCALE
+            
             if i == state.selected_move:
-                pygame.draw.rect(screen, (200, 200, 255), (80 + i * 350, 490, 300, 40))
-            text = font.render(move, True, BLACK)
-            screen.blit(text, (100 + i * 350, 500))
+                mark = font_moves.render("▶︎", True, BLACK)
+                screen.blit(mark, (mark_x, text_y))
+                
+            # 技名を表示（位置を固定）
+            text = font_moves.render(move, True, BLACK)
+            screen.blit(text, (text_x, text_y))
 
 # メイン関数
 def main():
@@ -268,25 +342,31 @@ def main():
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 running = False
-                
-            if game_state.state == GameState.BATTLE and game_state.player_turn:
-                if event.type == pygame.KEYDOWN:
-                    if event.key == pygame.K_LEFT and game_state.selected_move > 0:
-                        game_state.selected_move -= 1
-                    elif event.key == pygame.K_RIGHT and game_state.selected_move < len(player.pokemon[0].moves) - 1:
-                        game_state.selected_move += 1
-                    elif event.key == pygame.K_RETURN:
-                        # 技を使用
-                        move_index = game_state.selected_move
-                        move_name = player.pokemon[0].moves[move_index]
-                        damage = player.pokemon[0].damages[move_index]
-                        game_state.wild_pokemon.pokemon.hp -= damage
-                        # HPが0未満にならないように調整
-                        game_state.wild_pokemon.pokemon.hp = max(0, game_state.wild_pokemon.pokemon.hp)
-                        game_state.battle_message = format_damage_message(player.pokemon[0].name, move_name, damage)
-                        game_state.player_turn = False
-                        game_state.battle_timer = pygame.time.get_ticks()
-        
+
+            if game_state.state == GameState.BATTLE:
+                # 技選択中
+                if game_state.battle_state == GameState.BATTLE_SELECT and game_state.player_turn:
+                    if event.type == pygame.KEYDOWN:
+                        if event.key == pygame.K_LEFT and game_state.selected_move > 0:
+                            game_state.selected_move -= 1
+                        elif event.key == pygame.K_RIGHT and game_state.selected_move < len(player.pokemon[0].moves) - 1:
+                            game_state.selected_move += 1
+                        elif event.key == pygame.K_RETURN:
+                            # 技を使用
+                            move_index = game_state.selected_move
+                            move_name = player.pokemon[0].moves[move_index]
+                            damage = player.pokemon[0].damages[move_index]
+                            game_state.wild_pokemon.pokemon.hp -= damage
+                            game_state.wild_pokemon.pokemon.hp = max(0, game_state.wild_pokemon.pokemon.hp)
+                            game_state.battle_message = format_damage_message(player.pokemon[0].name, move_name, damage)
+                            game_state.battle_state = GameState.BATTLE_MESSAGE
+                            game_state.player_turn = False
+                            game_state.battle_timer = pygame.time.get_ticks()
+                            # 文字表示をリセット
+                            game_state.displayed_chars = 0
+                            game_state.char_display_timer = 0
+                            game_state.full_message_displayed = False
+
         # ゲームロジック
         if game_state.state == GameState.FIELD:
             keys = pygame.key.get_pressed()
@@ -305,39 +385,69 @@ def main():
                         game_state.wild_pokemon = WildPokemon()
                         game_state.battle_message = f"野生の{game_state.wild_pokemon.pokemon.name}が現れた！"
                         game_state.player_turn = True
+                        game_state.battle_state = GameState.BATTLE_MESSAGE  # ここで必ずメッセージ状態にする
                         steps_since_last_encounter = 0
+                        # 文字表示をリセット
+                        game_state.displayed_chars = 0
+                        game_state.char_display_timer = 0
+                        game_state.full_message_displayed = False
+                        # バトル開始メッセージ表示用にタイマーをセット
+                        game_state.battle_timer = pygame.time.get_ticks()
                         
         elif game_state.state == GameState.BATTLE:
-            # 敵のターン処理
-            if not game_state.player_turn and pygame.time.get_ticks() - game_state.battle_timer > 2000:
-                # 野生ポケモンのHPが0以下ならバトル終了
-                if game_state.wild_pokemon.pokemon.hp <= 0:
-                    game_state.battle_message = f"野生の{game_state.wild_pokemon.pokemon.name}を倒した！"
-                    pygame.time.delay(2000)
-                    game_state.state = GameState.FIELD
-                else:
-                    # 敵の攻撃
-                    enemy_move_index = random.randint(0, len(game_state.wild_pokemon.pokemon.moves) - 1)
-                    enemy_move = game_state.wild_pokemon.pokemon.moves[enemy_move_index]
-                    enemy_damage = game_state.wild_pokemon.pokemon.damages[enemy_move_index]
-                    player.pokemon[0].hp -= enemy_damage
-                    # HPが0未満にならないように調整
-                    player.pokemon[0].hp = max(0, player.pokemon[0].hp)
-                    game_state.battle_message = format_damage_message(
-                        f"野生の{game_state.wild_pokemon.pokemon.name}", enemy_move, enemy_damage)
-                    
-                    # プレイヤーのポケモンのHPが0以下ならバトル終了
-                    if player.pokemon[0].hp <= 0:
-                        player.pokemon[0].hp = 0
-                        game_state.battle_message = f"{player.pokemon[0].name}は倒れた！"
-                        pygame.time.delay(2000)
-                        # HP回復して再開
-                        player.pokemon[0].hp = player.pokemon[0].max_hp
-                        game_state.state = GameState.FIELD
-                    else:
-                        game_state.player_turn = True
-                        
-                game_state.battle_timer = pygame.time.get_ticks()
+            # メッセージ自動送り処理
+            if game_state.battle_state == GameState.BATTLE_MESSAGE:
+                # メッセージが全部表示された場合のみタイマー処理を行う
+                if game_state.full_message_displayed:
+                    if pygame.time.get_ticks() - game_state.battle_timer > 2000 and not game_state.battle_end_flag:
+                        if game_state.player_turn:
+                            game_state.battle_state = GameState.BATTLE_SELECT
+                        else:
+                            # 敵のターン処理
+                            if game_state.wild_pokemon.pokemon.hp <= 0:
+                                game_state.battle_message = f"野生の{game_state.wild_pokemon.pokemon.name}を倒した！"
+                                game_state.battle_timer = pygame.time.get_ticks()  # タイマーをリセット
+                                # 文字表示をリセット
+                                game_state.displayed_chars = 0
+                                game_state.char_display_timer = 0
+                                game_state.full_message_displayed = False
+                                # 4秒後にフィールドに戻るフラグを立てる
+                                game_state.battle_end_flag = True
+                            else:
+                                enemy_move_index = random.randint(0, len(game_state.wild_pokemon.pokemon.moves) - 1)
+                                enemy_move = game_state.wild_pokemon.pokemon.moves[enemy_move_index]
+                                enemy_damage = game_state.wild_pokemon.pokemon.damages[enemy_move_index]
+                                player.pokemon[0].hp -= enemy_damage
+                                player.pokemon[0].hp = max(0, player.pokemon[0].hp)
+                                game_state.battle_message = format_damage_message(
+                                    f"野生の{game_state.wild_pokemon.pokemon.name}", enemy_move, enemy_damage)
+                                game_state.battle_timer = pygame.time.get_ticks()
+                                # 文字表示をリセット
+                                game_state.displayed_chars = 0
+                                game_state.char_display_timer = 0
+                                game_state.full_message_displayed = False
+                                
+                                if player.pokemon[0].hp <= 0:
+                                    player.pokemon[0].hp = 0
+                                    game_state.battle_message = f"{player.pokemon[0].name}は倒れた！"
+                                    game_state.battle_timer = pygame.time.get_ticks()  # タイマーをリセット
+                                    # 文字表示をリセット
+                                    game_state.displayed_chars = 0
+                                    game_state.char_display_timer = 0
+                                    game_state.full_message_displayed = False
+                                    # 4秒後にフィールドに戻るフラグを立てる
+                                    game_state.battle_end_flag = True
+                                else:
+                                    # プレイヤーのポケモンが倒れていなければプレイヤーのターンに戻す
+                                    game_state.player_turn = True
+
+            # バトル終了処理
+            if game_state.battle_end_flag and pygame.time.get_ticks() - game_state.battle_timer > 4000:
+                # 倒れたのがプレイヤーのポケモンなら回復させる
+                if player.pokemon[0].hp <= 0:
+                    player.pokemon[0].hp = player.pokemon[0].max_hp
+                game_state.state = GameState.FIELD
+                game_state.battle_end_flag = False
         
         # 描画
         screen.fill((135, 206, 235))  # 空色の背景
