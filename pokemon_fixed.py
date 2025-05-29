@@ -160,7 +160,7 @@ class Player:
         self.height = 20 * GameConfig.SCALE
         self.direction = "down"
         # 技の詳細情報を追加：タイプとPP
-        self.pokemon = [Pokemon("ヒトカゲ", "ほのお", 20, 
+        self.pokemon = [Pokemon("ヒトカゲ", "ほのお", 5, 
                                ["ひのこ", "ひっかく"], 
                                [10, 5], 
                                ["ほのお", "ノーマル"],  # 技のタイプ
@@ -493,15 +493,267 @@ def draw_battle_screen(player, wild_pokemon, state):
     state.player = player
     draw_battle_message(state)
 
+# バトル時のダメージメッセージを生成
+def format_damage_message(pokemon_name, move_name, damage):
+    """バトル時のダメージメッセージを生成する関数"""
+    return f"{pokemon_name}の{move_name}!"
+
+def reset_message_display(game_state):
+    """メッセージ表示に関する状態をリセットする関数"""
+    game_state.displayed_chars = 0
+    game_state.char_display_timer = 0
+    game_state.full_message_displayed = False
+
+def process_field_logic(player, game_state, steps_since_last_encounter):
+    """フィールド上での移動処理とランダムエンカウントを処理する関数"""
+    keys = pygame.key.get_pressed()
+    old_x, old_y = player.x, player.y
+    player.move(keys)
+    
+    # 移動したかチェック
+    if old_x != player.x or old_y != player.y:
+        steps_since_last_encounter += 1
+        
+        # 草むらの中にいるかチェック
+        if player.y > GameConfig.HEIGHT // 2:
+            # ランダムエンカウント
+            if steps_since_last_encounter > GameConfig.STEPS_BEFORE_ENCOUNTER and random.random() < GameConfig.ENCOUNTER_RATE:
+                game_state.state = GameState.BATTLE
+                game_state.wild_pokemon = WildPokemon()
+                game_state.battle_message = f"野生の{game_state.wild_pokemon.pokemon.name}が現れた！"
+                game_state.player_turn = True
+                game_state.battle_state = GameState.BATTLE_MESSAGE
+                steps_since_last_encounter = 0
+                # 文字表示をリセット
+                reset_message_display(game_state)
+                # バトル開始メッセージ表示用にタイマーをセット
+                game_state.battle_timer = pygame.time.get_ticks()
+    
+    return steps_since_last_encounter
+
+def apply_pending_damage(game_state, player):
+    """保留されていたダメージを適用する関数"""
+    if game_state.pending_damage <= 0:
+        return False  # ダメージ適用なし
+        
+    if game_state.damage_target == "enemy":
+        game_state.wild_pokemon.pokemon.hp -= game_state.pending_damage
+        game_state.wild_pokemon.pokemon.hp = max(0, game_state.wild_pokemon.pokemon.hp)
+        # 敵が倒れたかは呼び出し元でチェック
+    elif game_state.damage_target == "player":
+        player.pokemon[0].hp -= game_state.pending_damage
+        player.pokemon[0].hp = max(0, player.pokemon[0].hp)
+        # プレイヤーのポケモンが倒れたかチェック
+        if player.pokemon[0].hp <= 0:
+            player.pokemon[0].hp = 0
+            game_state.battle_message = f"{player.pokemon[0].name}は倒れた！"
+            game_state.battle_timer = pygame.time.get_ticks()
+            # 文字表示をリセット
+            reset_message_display(game_state)
+            # 数秒後にフィールドに戻るフラグを立てる
+            game_state.battle_end_flag = True
+            # ダメージをリセット
+            game_state.pending_damage = 0
+            return True  # 特別な処理が行われた
+    
+    # 一度だけ適用するようにリセット
+    game_state.pending_damage = 0
+    return False  # 特別な処理なし
+
+def process_enemy_turn(game_state):
+    """敵のターン処理を行う関数"""
+    # 敵が倒れていたら終了メッセージ
+    if game_state.wild_pokemon.pokemon.hp <= 0:
+        game_state.battle_message = f"野生の{game_state.wild_pokemon.pokemon.name}を倒した！"
+        game_state.battle_timer = pygame.time.get_ticks()  # タイマーをリセット
+        # 文字表示をリセット
+        reset_message_display(game_state)
+        # 数秒後にフィールドに戻るフラグを立てる
+        game_state.battle_end_flag = True
+        return
+    
+    # PPが残っている技をランダムに選ぶ
+    available_moves = []
+    for i, move in enumerate(game_state.wild_pokemon.pokemon.moves):
+        if game_state.wild_pokemon.pokemon.move_pp[i][0] > 0:
+            available_moves.append(i)
+    
+    # 使える技がある場合
+    if available_moves:
+        enemy_move_index = random.choice(available_moves)
+        enemy_move = game_state.wild_pokemon.pokemon.moves[enemy_move_index]
+        enemy_damage = game_state.wild_pokemon.pokemon.damages[enemy_move_index]
+        
+        # PPを消費
+        game_state.wild_pokemon.pokemon.move_pp[enemy_move_index][0] -= 1
+        
+        # ダメージ情報を保存
+        game_state.pending_damage = enemy_damage
+        game_state.damage_target = "player"
+        # メッセージを設定
+        game_state.battle_message = format_damage_message(
+            f"野生の{game_state.wild_pokemon.pokemon.name}", enemy_move, enemy_damage)
+    
+    game_state.battle_timer = pygame.time.get_ticks()
+    # 文字表示をリセット
+    reset_message_display(game_state)
+    
+    # プレイヤーのターンに戻す
+    game_state.player_turn = True
+
+def process_battle_message(game_state, player):
+    """バトルメッセージの処理とダメージ適用を行う関数"""
+    # メッセージが全部表示された場合のみタイマー処理を行う
+    if game_state.full_message_displayed:
+        # メッセージが完全に表示されたら、保存しておいたダメージを適用
+        special_processed = apply_pending_damage(game_state, player)
+        
+        # バトル終了フラグがセットされていない場合のみ次の処理へ
+        if game_state.battle_end_flag:
+            # 終了フラグがセットされていれば何もしない（「倒れた！」メッセージを表示したまま）
+            pass
+        elif pygame.time.get_ticks() - game_state.battle_timer > GameConfig.MESSAGE_WAIT_TIME:
+            if game_state.player_turn:
+                game_state.battle_state = GameState.BATTLE_COMMAND
+            else:
+                # 敵のターン処理
+                process_enemy_turn(game_state)
+
+def process_battle_logic(game_state, player):
+    """バトル中のロジック処理を行う関数"""
+    # メッセージ自動送り処理
+    if game_state.battle_state == GameState.BATTLE_MESSAGE:
+        process_battle_message(game_state, player)
+
+    # バトル終了処理
+    if game_state.battle_end_flag and pygame.time.get_ticks() - game_state.battle_timer > GameConfig.BATTLE_END_WAIT_TIME:
+        # 倒れたのがプレイヤーのポケモンなら回復させる
+        if player.pokemon[0].hp <= 0:
+            player.pokemon[0].hp = player.pokemon[0].max_hp
+            player.pokemon[0].display_hp = player.pokemon[0].max_hp  # 回復時はdisplay_hpも同期
+        game_state.state = GameState.FIELD
+        game_state.battle_end_flag = False
+
+def update_hp_animations(player, game_state):
+    """HPバーのアニメーションを更新する関数"""
+    if game_state.state == GameState.BATTLE:
+        # プレイヤーポケモンのHP
+        if player.pokemon[0].display_hp > player.pokemon[0].hp:
+            # 現在のHPとの差に比例した減少速度（差が大きいほど速く減少）
+            hp_diff = player.pokemon[0].display_hp - player.pokemon[0].hp
+            decrease_amount = max(hp_diff * 0.05, GameConfig.HP_ANIMATION_SPEED)
+            player.pokemon[0].display_hp -= decrease_amount
+            # 減りすぎないようにチェック
+            if player.pokemon[0].display_hp < player.pokemon[0].hp:
+                player.pokemon[0].display_hp = player.pokemon[0].hp
+        
+        # 敵ポケモンのHP
+        if game_state.wild_pokemon and game_state.wild_pokemon.pokemon.display_hp > game_state.wild_pokemon.pokemon.hp:
+            # 現在のHPとの差に比例した減少速度
+            hp_diff = game_state.wild_pokemon.pokemon.display_hp - game_state.wild_pokemon.pokemon.hp
+            decrease_amount = max(hp_diff * 0.05, GameConfig.HP_ANIMATION_SPEED)
+            game_state.wild_pokemon.pokemon.display_hp -= decrease_amount
+            if game_state.wild_pokemon.pokemon.display_hp < game_state.wild_pokemon.pokemon.hp:
+                game_state.wild_pokemon.pokemon.display_hp = game_state.wild_pokemon.pokemon.hp
+
+def draw_game(player, game_state):
+    """ゲーム画面の描画を行う関数"""
+    # 背景
+    screen.fill(GameConfig.SKY_BLUE)  # 空色の背景
+    
+    # 現在の状態に応じて描画
+    if game_state.state == GameState.FIELD:
+        draw_field()
+        player.draw()
+    elif game_state.state == GameState.BATTLE:
+        draw_battle_screen(player, game_state.wild_pokemon, game_state)
+    
+    # 画面更新
+    pygame.display.flip()
+
+def handle_battle_input(event, game_state, player):
+    """バトル画面でのキー入力処理を行う関数"""
+    # コマンド選択中
+    if game_state.battle_state == GameState.BATTLE_COMMAND and game_state.player_turn:
+        if event.type == pygame.KEYDOWN:
+            # 横方向の移動（左右）
+            if event.key == pygame.K_LEFT:
+                if game_state.selected_command % 2 == 1:  # 右側から左側へ
+                    game_state.selected_command -= 1
+            elif event.key == pygame.K_RIGHT:
+                if game_state.selected_command % 2 == 0:  # 左側から右側へ
+                    game_state.selected_command += 1
+            # 縦方向の移動（上下）
+            elif event.key == pygame.K_UP:
+                if game_state.selected_command >= 2:  # 下段から上段へ
+                    game_state.selected_command -= 2
+            elif event.key == pygame.K_DOWN:
+                if game_state.selected_command < 2:  # 上段から下段へ
+                    game_state.selected_command += 2
+            # 決定（Enterキー）
+            elif event.key == pygame.K_RETURN:
+                if game_state.selected_command == 0:  # 「たたかう」選択時
+                    game_state.battle_state = GameState.BATTLE_SELECT
+                elif game_state.selected_command == 3:  # 「にげる」選択時
+                    # バトルから逃げるメッセージを表示して、フィールドに戻る
+                    game_state.battle_message = "うまく にげきれた！"
+                    game_state.battle_state = GameState.BATTLE_MESSAGE
+                    game_state.battle_timer = pygame.time.get_ticks()
+                    # 文字表示をリセット
+                    game_state.displayed_chars = 0
+                    game_state.char_display_timer = 0
+                    game_state.full_message_displayed = False
+                    game_state.battle_end_flag = True
+    
+    # 技選択中
+    elif game_state.battle_state == GameState.BATTLE_SELECT and game_state.player_turn:
+        if event.type == pygame.KEYDOWN:
+            if event.key == pygame.K_UP and game_state.selected_move > 0:
+                game_state.selected_move -= 1
+            elif event.key == pygame.K_DOWN and game_state.selected_move < len(player.pokemon[0].moves) - 1:
+                game_state.selected_move += 1
+            elif event.key == pygame.K_ESCAPE:  # ESCキーでコマンド選択に戻る
+                game_state.battle_state = GameState.BATTLE_COMMAND
+            elif event.key == pygame.K_RETURN:
+                # 技を使用（ダメージは後で適用）
+                move_index = game_state.selected_move
+                move_name = player.pokemon[0].moves[move_index]
+                damage = player.pokemon[0].damages[move_index]
+                
+                # PPがあるか確認
+                if player.pokemon[0].move_pp[move_index][0] > 0:
+                    # PPを1減らす
+                    player.pokemon[0].move_pp[move_index][0] -= 1
+                    
+                    # ダメージ情報を保存
+                    game_state.pending_damage = damage
+                    game_state.damage_target = "enemy"
+                    # メッセージを設定
+                    game_state.battle_message = format_damage_message(player.pokemon[0].name, move_name, damage)
+                    game_state.battle_state = GameState.BATTLE_MESSAGE
+                    game_state.player_turn = False
+                    game_state.battle_timer = pygame.time.get_ticks()
+                    # 文字表示をリセット
+                    game_state.displayed_chars = 0
+                    game_state.char_display_timer = 0
+                    game_state.full_message_displayed = False
+                else:
+                    # PPが足りない場合のメッセージ
+                    game_state.battle_message = f"{move_name}のPPが足りない！"
+                    game_state.battle_state = GameState.BATTLE_MESSAGE
+                    game_state.battle_timer = pygame.time.get_ticks()
+                    # 文字表示をリセット
+                    game_state.displayed_chars = 0
+                    game_state.char_display_timer = 0
+                    game_state.full_message_displayed = False
+                    # プレイヤーのターンは続行
+                    game_state.pending_damage = 0
+
 # メイン関数
 def main():
     player = Player()
     game_state = GameState()
     steps_since_last_encounter = 0
-    
-    # バトル時のダメージメッセージを生成
-    def format_damage_message(pokemon_name, move_name, damage):
-        return f"{pokemon_name}の{move_name}!"
     
     running = True
     while running:
@@ -510,228 +762,21 @@ def main():
                 running = False
 
             if game_state.state == GameState.BATTLE:
-                # コマンド選択中
-                if game_state.battle_state == GameState.BATTLE_COMMAND and game_state.player_turn:
-                    if event.type == pygame.KEYDOWN:
-                        # 横方向の移動（左右）
-                        if event.key == pygame.K_LEFT:
-                            if game_state.selected_command % 2 == 1:  # 右側から左側へ
-                                game_state.selected_command -= 1
-                        elif event.key == pygame.K_RIGHT:
-                            if game_state.selected_command % 2 == 0:  # 左側から右側へ
-                                game_state.selected_command += 1
-                        # 縦方向の移動（上下）
-                        elif event.key == pygame.K_UP:
-                            if game_state.selected_command >= 2:  # 下段から上段へ
-                                game_state.selected_command -= 2
-                        elif event.key == pygame.K_DOWN:
-                            if game_state.selected_command < 2:  # 上段から下段へ
-                                game_state.selected_command += 2
-                        # 決定（Enterキー）
-                        elif event.key == pygame.K_RETURN:
-                            if game_state.selected_command == 0:  # 「たたかう」選択時
-                                game_state.battle_state = GameState.BATTLE_SELECT
-                            elif game_state.selected_command == 3:  # 「にげる」選択時
-                                # バトルから逃げるメッセージを表示して、フィールドに戻る
-                                game_state.battle_message = "うまく にげきれた！"
-                                game_state.battle_state = GameState.BATTLE_MESSAGE
-                                game_state.battle_timer = pygame.time.get_ticks()
-                                # 文字表示をリセット
-                                game_state.displayed_chars = 0
-                                game_state.char_display_timer = 0
-                                game_state.full_message_displayed = False
-                                game_state.battle_end_flag = True
-                
-                # 技選択中
-                elif game_state.battle_state == GameState.BATTLE_SELECT and game_state.player_turn:
-                    if event.type == pygame.KEYDOWN:
-                        if event.key == pygame.K_UP and game_state.selected_move > 0:
-                            game_state.selected_move -= 1
-                        elif event.key == pygame.K_DOWN and game_state.selected_move < len(player.pokemon[0].moves) - 1:
-                            game_state.selected_move += 1
-                        elif event.key == pygame.K_ESCAPE:  # ESCキーでコマンド選択に戻る
-                            game_state.battle_state = GameState.BATTLE_COMMAND
-                        elif event.key == pygame.K_RETURN:
-                            # 技を使用（ダメージは後で適用）
-                            move_index = game_state.selected_move
-                            move_name = player.pokemon[0].moves[move_index]
-                            damage = player.pokemon[0].damages[move_index]
-                            
-                            # PPがあるか確認
-                            if player.pokemon[0].move_pp[move_index][0] > 0:
-                                # PPを1減らす
-                                player.pokemon[0].move_pp[move_index][0] -= 1
-                                
-                                # ダメージ情報を保存
-                                game_state.pending_damage = damage
-                                game_state.damage_target = "enemy"
-                                # メッセージを設定
-                                game_state.battle_message = format_damage_message(player.pokemon[0].name, move_name, damage)
-                                game_state.battle_state = GameState.BATTLE_MESSAGE
-                                game_state.player_turn = False
-                                game_state.battle_timer = pygame.time.get_ticks()
-                                # 文字表示をリセット
-                                game_state.displayed_chars = 0
-                                game_state.char_display_timer = 0
-                                game_state.full_message_displayed = False
-                            else:
-                                # PPが足りない場合のメッセージ
-                                game_state.battle_message = f"{move_name}のPPが足りない！"
-                                game_state.battle_state = GameState.BATTLE_MESSAGE
-                                game_state.battle_timer = pygame.time.get_ticks()
-                                # 文字表示をリセット
-                                game_state.displayed_chars = 0
-                                game_state.char_display_timer = 0
-                                game_state.full_message_displayed = False
-                                # プレイヤーのターンは続行
-                                game_state.pending_damage = 0
+                handle_battle_input(event, game_state, player)
 
         # ゲームロジック
         if game_state.state == GameState.FIELD:
-            keys = pygame.key.get_pressed()
-            old_x, old_y = player.x, player.y
-            player.move(keys)
-            
-            # 移動したかチェック
-            if old_x != player.x or old_y != player.y:
-                steps_since_last_encounter += 1
-                
-                # 草むらの中にいるかチェック
-                if player.y > GameConfig.HEIGHT // 2:
-                    # ランダムエンカウント
-                    if steps_since_last_encounter > GameConfig.STEPS_BEFORE_ENCOUNTER and random.random() < GameConfig.ENCOUNTER_RATE:
-                        game_state.state = GameState.BATTLE
-                        game_state.wild_pokemon = WildPokemon()
-                        game_state.battle_message = f"野生の{game_state.wild_pokemon.pokemon.name}が現れた！"
-                        game_state.player_turn = True
-                        game_state.battle_state = GameState.BATTLE_MESSAGE
-                        steps_since_last_encounter = 0
-                        # 文字表示をリセット
-                        game_state.displayed_chars = 0
-                        game_state.char_display_timer = 0
-                        game_state.full_message_displayed = False
-                        # バトル開始メッセージ表示用にタイマーをセット
-                        game_state.battle_timer = pygame.time.get_ticks()
-                        
+            steps_since_last_encounter = process_field_logic(player, game_state, steps_since_last_encounter)
         elif game_state.state == GameState.BATTLE:
-            # メッセージ自動送り処理
-            if game_state.battle_state == GameState.BATTLE_MESSAGE:
-                # メッセージが全部表示された場合のみタイマー処理を行う
-                if game_state.full_message_displayed:
-                    # メッセージが完全に表示されたら、保存しておいたダメージを適用
-                    if game_state.pending_damage > 0:
-                        if game_state.damage_target == "enemy":
-                            game_state.wild_pokemon.pokemon.hp -= game_state.pending_damage
-                            game_state.wild_pokemon.pokemon.hp = max(0, game_state.wild_pokemon.pokemon.hp)
-                        elif game_state.damage_target == "player":
-                            player.pokemon[0].hp -= game_state.pending_damage
-                            player.pokemon[0].hp = max(0, player.pokemon[0].hp)
-                            # プレイヤーのポケモンが倒れたかチェック
-                            if player.pokemon[0].hp <= 0:
-                                player.pokemon[0].hp = 0
-                                game_state.battle_message = f"{player.pokemon[0].name}は倒れた！"
-                                game_state.battle_timer = pygame.time.get_ticks()
-                                # 文字表示をリセット
-                                game_state.displayed_chars = 0
-                                game_state.char_display_timer = 0
-                                game_state.full_message_displayed = False
-                                # 数秒後にフィールドに戻るフラグを立てる
-                                game_state.battle_end_flag = True
-                                # ダメージをリセット
-                                game_state.pending_damage = 0
-                        # 一度だけ適用するようにリセット
-                        game_state.pending_damage = 0
-                        
-                    # バトル終了フラグがセットされていない場合のみ次の処理へ
-                    if game_state.battle_end_flag:
-                        # 終了フラグがセットされていれば何もしない（「倒れた！」メッセージを表示したまま）
-                        pass
-                    elif pygame.time.get_ticks() - game_state.battle_timer > GameConfig.MESSAGE_WAIT_TIME:
-                        if game_state.player_turn:
-                            game_state.battle_state = GameState.BATTLE_COMMAND
-                        else:
-                            # 敵のターン処理
-                            if game_state.wild_pokemon.pokemon.hp <= 0:
-                                game_state.battle_message = f"野生の{game_state.wild_pokemon.pokemon.name}を倒した！"
-                                game_state.battle_timer = pygame.time.get_ticks()  # タイマーをリセット
-                                # 文字表示をリセット
-                                game_state.displayed_chars = 0
-                                game_state.char_display_timer = 0
-                                game_state.full_message_displayed = False
-                                # 数秒後にフィールドに戻るフラグを立てる
-                                game_state.battle_end_flag = True
-                            else:
-                                # PPが残っている技をランダムに選ぶ
-                                available_moves = []
-                                for i, move in enumerate(game_state.wild_pokemon.pokemon.moves):
-                                    if game_state.wild_pokemon.pokemon.move_pp[i][0] > 0:
-                                        available_moves.append(i)
-                                
-                                # 使える技がある場合
-                                if available_moves:
-                                    enemy_move_index = random.choice(available_moves)
-                                    enemy_move = game_state.wild_pokemon.pokemon.moves[enemy_move_index]
-                                    enemy_damage = game_state.wild_pokemon.pokemon.damages[enemy_move_index]
-                                    
-                                    # PPを消費
-                                    game_state.wild_pokemon.pokemon.move_pp[enemy_move_index][0] -= 1
-                                    
-                                    # ダメージ情報を保存
-                                    game_state.pending_damage = enemy_damage
-                                    game_state.damage_target = "player"
-                                    # メッセージを設定
-                                    game_state.battle_message = format_damage_message(
-                                        f"野生の{game_state.wild_pokemon.pokemon.name}", enemy_move, enemy_damage)
-                                
-                                game_state.battle_timer = pygame.time.get_ticks()
-                                # 文字表示をリセット
-                                game_state.displayed_chars = 0
-                                game_state.char_display_timer = 0
-                                game_state.full_message_displayed = False
-                                
-                                # プレイヤーのターンに戻す
-                                game_state.player_turn = True
-
-            # バトル終了処理
-            if game_state.battle_end_flag and pygame.time.get_ticks() - game_state.battle_timer > GameConfig.BATTLE_END_WAIT_TIME:
-                # 倒れたのがプレイヤーのポケモンなら回復させる
-                if player.pokemon[0].hp <= 0:
-                    player.pokemon[0].hp = player.pokemon[0].max_hp
-                    player.pokemon[0].display_hp = player.pokemon[0].max_hp  # 回復時はdisplay_hpも同期
-                game_state.state = GameState.FIELD
-                game_state.battle_end_flag = False
+            process_battle_logic(game_state, player)
         
         # HPアニメーション更新
-        if game_state.state == GameState.BATTLE:
-            # プレイヤーポケモンのHP
-            if player.pokemon[0].display_hp > player.pokemon[0].hp:
-                # 現在のHPとの差に比例した減少速度（差が大きいほど速く減少）
-                hp_diff = player.pokemon[0].display_hp - player.pokemon[0].hp
-                decrease_amount = max(hp_diff * 0.05, GameConfig.HP_ANIMATION_SPEED)
-                player.pokemon[0].display_hp -= decrease_amount
-                # 減りすぎないようにチェック
-                if player.pokemon[0].display_hp < player.pokemon[0].hp:
-                    player.pokemon[0].display_hp = player.pokemon[0].hp
-            
-            # 敵ポケモンのHP
-            if game_state.wild_pokemon and game_state.wild_pokemon.pokemon.display_hp > game_state.wild_pokemon.pokemon.hp:
-                # 現在のHPとの差に比例した減少速度
-                hp_diff = game_state.wild_pokemon.pokemon.display_hp - game_state.wild_pokemon.pokemon.hp
-                decrease_amount = max(hp_diff * 0.05, GameConfig.HP_ANIMATION_SPEED)
-                game_state.wild_pokemon.pokemon.display_hp -= decrease_amount
-                if game_state.wild_pokemon.pokemon.display_hp < game_state.wild_pokemon.pokemon.hp:
-                    game_state.wild_pokemon.pokemon.display_hp = game_state.wild_pokemon.pokemon.hp
+        update_hp_animations(player, game_state)
         
         # 描画
-        screen.fill(GameConfig.SKY_BLUE)  # 空色の背景
+        draw_game(player, game_state)
         
-        if game_state.state == GameState.FIELD:
-            draw_field()
-            player.draw()
-        elif game_state.state == GameState.BATTLE:
-            draw_battle_screen(player, game_state.wild_pokemon, game_state)
-        
-        pygame.display.flip()
+        # フレームレート制御
         clock.tick(GameConfig.FPS)
 
 if __name__ == "__main__":
