@@ -34,6 +34,10 @@ class GameConfig:
     BATTLE_END_WAIT_TIME = 4000      # バトル終了後の待機時間（ミリ秒）
     HP_ANIMATION_SPEED = 0.1         # HPバー減少アニメーションの速度
     
+    # スキルアニメーション関連
+    SKILL_ANIMATION_DURATION = 1500  # スキルアニメーション表示時間（ミリ秒）
+    FIRE_ANIMATION_SPEED = 100       # 炎アニメーションの速度（ミリ秒）
+    
     # 画像のパス
     IMG_DIR = "img/"
     HP_BAR_IMG = IMG_DIR + "hp.png"
@@ -47,6 +51,10 @@ class GameConfig:
     # キャラクター画像
     PLAYER_IMG = IMG_DIR + "red_front.png"
     HITOKAGE_IMG = IMG_DIR + "hitokage.png"
+    
+    # スキル画像
+    FIRE_SMALL_IMG = IMG_DIR + "fire_small.png"
+    FIRE_BIG_IMG = IMG_DIR + "fire_big.png"
     
     # ポケモン画像マップ
     POKEMON_IMG_MAP = {
@@ -223,6 +231,7 @@ class GameState:
     BATTLE_COMMAND = 0  # コマンド選択（たたかう、どうぐ、ポケモン、にげる）
     BATTLE_SELECT = 1   # 技選択
     BATTLE_MESSAGE = 2  # メッセージ表示
+    BATTLE_ANIMATION = 3  # 技アニメーション表示
 
     def __init__(self):
         self.state = self.FIELD
@@ -241,6 +250,14 @@ class GameState:
         # ダメージ情報を一時保存
         self.pending_damage = 0    # 待機中のダメージ量
         self.damage_target = None  # ダメージを受ける対象（"player" または "enemy"）
+        
+        # 技アニメーション用の変数
+        self.animation_start_time = 0  # アニメーション開始時間
+        self.current_move_name = ""  # 現在使用中の技名
+        self.animation_pos = []  # アニメーション位置リスト（3点移動用）
+        self.animation_frame = 0  # アニメーションフレーム
+        self.animation_timer = 0  # アニメーション用タイマー
+        self.use_big_fire = False  # 大きい炎を使用するかどうか
 
 # フィールドを描画
 def draw_field():
@@ -391,7 +408,7 @@ def draw_command_selection(state):
 
 # バトルメッセージを描画
 def draw_battle_message(state):
-    if state.battle_state == GameState.BATTLE_MESSAGE:
+    if state.battle_state == GameState.BATTLE_MESSAGE or state.battle_state == GameState.BATTLE_ANIMATION:
         message_image = load_image(GameConfig.MESSAGE_ALL_IMG, (GameConfig.WIDTH, 49 * GameConfig.SCALE))
         screen.blit(message_image, (0, GameConfig.HEIGHT - 49 * GameConfig.SCALE))
         font_message = get_font(14)
@@ -404,18 +421,25 @@ def draw_battle_message(state):
             state.displayed_chars = 0
             state.full_message_displayed = False
         
-        # 一定時間ごとに表示する文字数を増やす
-        if not state.full_message_displayed and current_time - state.char_display_timer > GameConfig.MESSAGE_DISPLAY_SPEED:
-            state.displayed_chars += 1
-            state.char_display_timer = current_time
+        # アニメーション中はテキストをすぐに全て表示
+        if state.battle_state == GameState.BATTLE_ANIMATION:
+            displayed_text = state.battle_message
+            state.displayed_chars = len(state.battle_message)
+            state.full_message_displayed = True
+        else:
+            # 一定時間ごとに表示する文字数を増やす
+            if not state.full_message_displayed and current_time - state.char_display_timer > GameConfig.MESSAGE_DISPLAY_SPEED:
+                state.displayed_chars += 1
+                state.char_display_timer = current_time
+                
+                # 全ての文字を表示したかチェック
+                if state.displayed_chars >= len(state.battle_message):
+                    state.displayed_chars = len(state.battle_message)
+                    state.full_message_displayed = True
             
-            # 全ての文字を表示したかチェック
-            if state.displayed_chars >= len(state.battle_message):
-                state.displayed_chars = len(state.battle_message)
-                state.full_message_displayed = True
+            # 現在表示すべき文字列を取得
+            displayed_text = state.battle_message[:state.displayed_chars]
         
-        # 現在表示すべき文字列を取得
-        displayed_text = state.battle_message[:state.displayed_chars]
         text = font_message.render(displayed_text, True, GameConfig.BLACK)
         screen.blit(text, (10 * GameConfig.SCALE, GameConfig.HEIGHT - 49 * GameConfig.SCALE + 10 * GameConfig.SCALE))
     elif state.battle_state == GameState.BATTLE_COMMAND:
@@ -477,6 +501,70 @@ def draw_move_selection(state):
         pp_text_x = right_box_center_x - pp_text_width // 2
         screen.blit(pp_text, (pp_text_x, GameConfig.HEIGHT - 32 * GameConfig.SCALE))
 
+# 炎アニメーションを描画する関数
+def draw_fire_animation(state, wild_pokemon):
+    """炎のアニメーション描画関数"""
+    current_time = pygame.time.get_ticks()
+    
+    # アニメーション開始からの経過時間
+    elapsed_time = current_time - state.animation_start_time
+    
+    # アニメーション表示時間を超えていたらアニメーション終了
+    if elapsed_time > GameConfig.SKILL_ANIMATION_DURATION:
+        # メッセージ表示状態に切り替え
+        state.battle_state = GameState.BATTLE_MESSAGE
+        state.battle_timer = current_time
+        return
+    
+    # アニメーションフレームの更新
+    if current_time - state.animation_timer > GameConfig.FIRE_ANIMATION_SPEED:
+        # 同じ位置で大小切り替え、または次の位置へ移動
+        if state.use_big_fire:  # 大きい炎を表示中なら
+            # 次の位置へ移動
+            state.animation_frame = (state.animation_frame + 1) % 3  # 3点移動（左→右→中央）
+            state.use_big_fire = False  # 小さい炎から開始
+        else:
+            # 同じ位置で大きい炎に切り替え
+            state.use_big_fire = True
+            
+        state.animation_timer = current_time
+    
+    # 敵ポケモンの実際の表示位置を基準に3点移動位置を計算
+    # ポケモン画像の表示位置（draw_wild_pokemon_info関数と同じ座標を使用）
+    enemy_pos_x = 90 * GameConfig.SCALE  # ポケモン画像のX座標
+    enemy_width = 50 * GameConfig.SCALE  # ポケモン画像の幅
+    enemy_height = 50 * GameConfig.SCALE  # ポケモン画像の高さ
+    
+    # 敵ポケモンの中心位置
+    enemy_center_x = enemy_pos_x + enemy_width / 2
+    
+    # アニメーションポイント（同じ高さでの3点移動）
+    if not state.animation_pos:
+        # 初期化（最初の呼び出し時のみ）
+        # 敵ポケモンの中心Yより少し上の位置を炎の高さとする
+        fire_height = enemy_height
+        # 移動順序を設定: 左側→右側→中央
+        offsets = [
+            (-20, 0),  # 左側
+            (20, 0),   # 右側
+            (0, 0)     # 中央
+        ]
+        for off_x, off_y in offsets:
+            pos_x = enemy_center_x + off_x * GameConfig.SCALE
+            pos_y = fire_height
+            state.animation_pos.append((pos_x, pos_y))
+    
+    # 現在のフレームの位置を取得
+    current_pos = state.animation_pos[state.animation_frame]
+    
+    # 炎の画像を描画
+    fire_img_path = GameConfig.FIRE_BIG_IMG if state.use_big_fire else GameConfig.FIRE_SMALL_IMG
+    fire_size = (16 * GameConfig.SCALE) if state.use_big_fire else (16 * GameConfig.SCALE)
+    fire_img = load_image(fire_img_path, (fire_size, fire_size))
+    
+    # 炎画像を描画
+    screen.blit(fire_img, (current_pos[0] - fire_size//2, current_pos[1] - fire_size//2))
+
 # バトル画面を描画するメイン関数
 def draw_battle_screen(player, wild_pokemon, state):
     # バトル背景
@@ -491,7 +579,13 @@ def draw_battle_screen(player, wild_pokemon, state):
     
     # stateにplayerを一時的に格納（技選択画面描画で使用）
     state.player = player
+    
+    # メッセージ枠は常に表示
     draw_battle_message(state)
+    
+    # アニメーション状態なら炎アニメーションも描画
+    if state.battle_state == GameState.BATTLE_ANIMATION:
+        draw_fire_animation(state, wild_pokemon)
 
 # メイン関数
 def main():
@@ -567,7 +661,21 @@ def main():
                                 game_state.damage_target = "enemy"
                                 # メッセージを設定
                                 game_state.battle_message = format_damage_message(player.pokemon[0].name, move_name, damage)
-                                game_state.battle_state = GameState.BATTLE_MESSAGE
+                                
+                                # 「ひのこ」の場合はアニメーション表示
+                                if move_name == "ひのこ" and player.pokemon[0].name == "ヒトカゲ":
+                                    # アニメーション状態に切り替え
+                                    game_state.battle_state = GameState.BATTLE_ANIMATION
+                                    game_state.current_move_name = move_name
+                                    game_state.animation_start_time = pygame.time.get_ticks()
+                                    game_state.animation_timer = pygame.time.get_ticks()
+                                    game_state.animation_frame = 0
+                                    game_state.animation_pos = []  # 位置はdraw_fire_animation内で初期化
+                                    game_state.use_big_fire = False
+                                else:
+                                    # 通常の技はメッセージ表示
+                                    game_state.battle_state = GameState.BATTLE_MESSAGE
+                                
                                 game_state.player_turn = False
                                 game_state.battle_timer = pygame.time.get_ticks()
                                 # 文字表示をリセット
