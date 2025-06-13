@@ -3,6 +3,7 @@ import sys
 import random
 import time
 import os
+import pytmx  # TMXファイルを読み込むためのライブラリ
 
 # ゲーム定数
 class GameConfig:
@@ -64,6 +65,14 @@ class GameConfig:
         "イーブイ": IMG_DIR + "eevee.png",
         "ヒトカゲ": IMG_DIR + "hitokage.png"
     }
+    
+    # マップファイル
+    MAP_FILE = "pokemon_road_1.tmx"
+    
+    # タイル設定
+    TILE_SIZE = 16                  # 1タイルのピクセル数
+    MAP_WIDTH = 20                  # マップの横タイル数
+    MAP_HEIGHT = 36                 # マップの縦タイル数
 
 # 初期化
 pygame.init()
@@ -176,37 +185,42 @@ class Player:
         # プレイヤー画像を読み込む
         self.image = load_image(GameConfig.PLAYER_IMG, (self.width, self.height))
 
-    def move(self, keys):
+    def move(self, keys, tmx_map=None):
+        new_x, new_y = self.x, self.y
+        
         if keys[pygame.K_LEFT]:
-            self.x -= self.speed
+            new_x -= self.speed
             self.direction = "left"
         if keys[pygame.K_RIGHT]:
-            self.x += self.speed
+            new_x += self.speed
             self.direction = "right"
         if keys[pygame.K_UP]:
-            self.y -= self.speed
+            new_y -= self.speed
             self.direction = "up"
         if keys[pygame.K_DOWN]:
-            self.y += self.speed
+            new_y += self.speed
             self.direction = "down"
-            
-        # 画面外に出ないようにする
-        self.x = max(0, min(GameConfig.WIDTH - self.width, self.x))
-        self.y = max(0, min(GameConfig.HEIGHT - self.height, self.y))
+    
+        # TMXマップがある場合は衝突判定を行う
+        if tmx_map:
+            # 移動先がマップ内で歩行可能かチェック
+            if tmx_map.is_walkable(new_x + self.width/2, new_y + self.height/2):
+                # マップ範囲内に制限する
+                self.x = max(0, min(tmx_map.scaled_map_width - self.width, new_x))
+                self.y = max(0, min(tmx_map.scaled_map_height - self.height, new_y))
+            # マップの端に達したかどうかをチェックせず、常にマップの範囲内に収める
+        else:
+            # TMXマップがない場合は単純に移動し、画面内に制限
+            self.x = max(0, min(GameConfig.WIDTH - self.width, new_x))
+            self.y = max(0, min(GameConfig.HEIGHT - self.height, new_y))
 
-    def draw(self):
-        # 画像を描画
-        screen.blit(self.image, (self.x, self.y))
+    def draw(self, map_offset_x=0, map_offset_y=0):
+        # オフセットを適用した位置に描画
+        screen_x = self.x + map_offset_x
+        screen_y = self.y + map_offset_y
         
-        # 向きを表示（オプション）
-        if self.direction == "up":
-            pygame.draw.polygon(screen, GameConfig.RED, [(self.x + 20, self.y - 10), (self.x + 10, self.y), (self.x + 30, self.y)])
-        elif self.direction == "down":
-            pygame.draw.polygon(screen, GameConfig.RED, [(self.x + 20, self.y + self.height + 10), (self.x + 10, self.y + self.height), (self.x + 30, self.y + self.height)])
-        elif self.direction == "left":
-            pygame.draw.polygon(screen, GameConfig.RED, [(self.x - 10, self.y + 20), (self.x, self.y + 10), (self.x, self.y + 30)])
-        elif self.direction == "right":
-            pygame.draw.polygon(screen, GameConfig.RED, [(self.x + self.width + 10, self.y + 20), (self.x + self.width, self.y + 10), (self.x + self.width, self.y + 30)])
+        # 画像を描画
+        screen.blit(self.image, (screen_x, screen_y))
 
 # 野生のポケモンクラス
 class WildPokemon:
@@ -259,13 +273,129 @@ class GameState:
         self.animation_timer = 0  # アニメーション用タイマー
         self.use_big_fire = False  # 大きい炎を使用するかどうか
 
-# フィールドを描画
-def draw_field():
-    # 草むらエリアを描画（下半分）
-    pygame.draw.rect(screen, GameConfig.GREEN, (0, GameConfig.HEIGHT // 2, GameConfig.WIDTH, GameConfig.HEIGHT // 2))
+# TMXマップを読み込み描画するクラス
+class TiledMap:
+    def __init__(self, filename):
+        try:
+            # TMXファイルを読み込む
+            self.tmx_data = pytmx.load_pygame(filename)
+            # タイルサイズ
+            self.tile_width = GameConfig.TILE_SIZE
+            self.tile_height = GameConfig.TILE_SIZE
+            # マップサイズ（タイル数）
+            self.map_width = GameConfig.MAP_WIDTH
+            self.map_height = GameConfig.MAP_HEIGHT
+            # ピクセル単位のマップサイズ
+            self.width = self.map_width * self.tile_width
+            self.height = self.map_height * self.tile_height
+            # スケーリングサイズを計算
+            self.scaled_tile_width = self.tile_width * GameConfig.SCALE
+            self.scaled_tile_height = self.tile_height * GameConfig.SCALE
+            # スケーリング後のマップサイズ
+            self.scaled_map_width = int(self.width * GameConfig.SCALE)
+            self.scaled_map_height = int(self.height * GameConfig.SCALE)
+            # マップ画像を作成
+            self.create_map_surface()
+        except Exception as e:
+            print(f"マップの読み込みに失敗しました: {e}")
     
-    # 道を描画
-    pygame.draw.rect(screen, GameConfig.ROAD_COLOR, (GameConfig.WIDTH // 4, 0, GameConfig.WIDTH // 2, GameConfig.HEIGHT))
+    def create_map_surface(self):
+        """マップ全体をサーフェスに描画"""
+        # すべてのレイヤーを描画するサーフェスを作成
+        self.map_surface = pygame.Surface((self.width, self.height))
+        
+        # 各レイヤーを描画
+        for layer in self.tmx_data.visible_layers:
+            if hasattr(layer, 'data'):
+                for x, y, gid in layer:
+                    # gidが0の場合はタイルなし
+                    if gid:
+                        # タイルを取得して描画
+                        tile = self.tmx_data.get_tile_image_by_gid(gid)
+                        if tile:
+                            self.map_surface.blit(tile, (x * self.tile_width, y * self.tile_height))
+        
+        # スケーリングしたマップサーフェスも作成
+        self.scaled_surface = pygame.transform.scale(
+            self.map_surface, 
+            (int(self.width * GameConfig.SCALE), int(self.height * GameConfig.SCALE))
+        )
+        
+    def draw(self, screen, center_x, center_y):
+        """プレイヤーを中心にマップを描画"""
+        # 画面の中心位置
+        screen_center_x = GameConfig.WIDTH // 2
+        screen_center_y = GameConfig.HEIGHT // 2
+        
+        # 描画位置を計算（プレイヤーを中心に）
+        x_offset = screen_center_x - center_x
+        y_offset = screen_center_y - center_y
+        
+        # マップが小さい場合は中央に配置
+        if self.scaled_map_width < GameConfig.WIDTH:
+            x_offset = (GameConfig.WIDTH - self.scaled_map_width) // 2
+        else:
+            # マップが画面より大きい場合、端の処理を行う
+            # 左端の制限（マップの左端が画面の右にはみ出さないように）
+            x_offset = min(0, x_offset)
+            
+            # 右端の制限（マップの右端が画面の左にはみ出さないように）
+            if self.scaled_map_width + x_offset < GameConfig.WIDTH:
+                x_offset = GameConfig.WIDTH - self.scaled_map_width
+        
+        # 縦方向も同様に処理
+        if self.scaled_map_height < GameConfig.HEIGHT:
+            y_offset = (GameConfig.HEIGHT - self.scaled_map_height) // 2
+        else:
+            # 上端の制限
+            y_offset = min(0, y_offset)
+            
+            # 下端の制限
+            if self.scaled_map_height + y_offset < GameConfig.HEIGHT:
+                y_offset = GameConfig.HEIGHT - self.scaled_map_height
+        
+        # マップを描画（スケーリング済みサーフェスを使用）
+        screen.blit(self.scaled_surface, (x_offset, y_offset))
+        
+        # オフセット値を返す（プレイヤー描画位置の計算に使用）
+        return x_offset, y_offset
+        
+    def get_object_layer(self, name):
+        """指定した名前のオブジェクトレイヤーを取得"""
+        if hasattr(self.tmx_data, 'get_layer_by_name'):
+            return self.tmx_data.get_layer_by_name(name)
+        return None
+    
+    def is_walkable(self, x, y):
+        """指定した座標が歩行可能かどうかを判定"""
+        # タイル座標に変換
+        tile_x = int(x / self.scaled_tile_width)
+        tile_y = int(y / self.scaled_tile_height)
+        
+        # マップ範囲外なら歩行不可
+        if tile_x < 0 or tile_x >= self.tmx_data.width or tile_y < 0 or tile_y >= self.tmx_data.height:
+            return False
+            
+        # 各レイヤーをチェック（ここでは簡単のため"rock"という名前のレイヤーが障害物とする）
+        for layer_name in ['rock', 'collision', 'obstacles']:
+            try:
+                layer = self.tmx_data.get_layer_by_name(layer_name)
+                if layer and hasattr(layer, 'data'):
+                    # このレイヤーにタイルがあれば歩行不可
+                    if layer.data[tile_y][tile_x]:
+                        return False
+            except (ValueError, AttributeError, KeyError):
+                # レイヤーが存在しない場合は無視
+                pass
+                
+        return True
+
+# フィールドを描画
+def draw_field(player, tmx_map):
+    # マップを描画し、描画時のオフセットを取得
+    offset_x, offset_y = tmx_map.draw(screen, player.x + player.width // 2, player.y + player.height // 2)
+    # オフセットを返す（プレイヤー描画時に使用）
+    return offset_x, offset_y
 
 # HPバーを描画する関数
 def draw_hp_bar(x, y, pokemon, is_player=False):
@@ -593,6 +723,9 @@ def main():
     game_state = GameState()
     steps_since_last_encounter = 0
     
+    # TMXマップを読み込む
+    tmx_map = TiledMap(GameConfig.MAP_FILE)
+    
     # バトル時のダメージメッセージを生成
     def format_damage_message(pokemon_name, move_name, damage):
         return f"{pokemon_name}の{move_name}!"
@@ -698,28 +831,28 @@ def main():
         if game_state.state == GameState.FIELD:
             keys = pygame.key.get_pressed()
             old_x, old_y = player.x, player.y
-            player.move(keys)
+            player.move(keys, tmx_map)
             
             # 移動したかチェック
             if old_x != player.x or old_y != player.y:
                 steps_since_last_encounter += 1
                 
                 # 草むらの中にいるかチェック
-                if player.y > GameConfig.HEIGHT // 2:
-                    # ランダムエンカウント
-                    if steps_since_last_encounter > GameConfig.STEPS_BEFORE_ENCOUNTER and random.random() < GameConfig.ENCOUNTER_RATE:
-                        game_state.state = GameState.BATTLE
-                        game_state.wild_pokemon = WildPokemon()
-                        game_state.battle_message = f"野生の{game_state.wild_pokemon.pokemon.name}が現れた！"
-                        game_state.player_turn = True
-                        game_state.battle_state = GameState.BATTLE_MESSAGE
-                        steps_since_last_encounter = 0
-                        # 文字表示をリセット
-                        game_state.displayed_chars = 0
-                        game_state.char_display_timer = 0
-                        game_state.full_message_displayed = False
-                        # バトル開始メッセージ表示用にタイマーをセット
-                        game_state.battle_timer = pygame.time.get_ticks()
+                # if player.y > GameConfig.HEIGHT // 2:
+                #     # ランダムエンカウント
+                #     if steps_since_last_encounter > GameConfig.STEPS_BEFORE_ENCOUNTER and random.random() < GameConfig.ENCOUNTER_RATE:
+                #         game_state.state = GameState.BATTLE
+                #         game_state.wild_pokemon = WildPokemon()
+                #         game_state.battle_message = f"野生の{game_state.wild_pokemon.pokemon.name}が現れた！"
+                #         game_state.player_turn = True
+                #         game_state.battle_state = GameState.BATTLE_MESSAGE
+                #         steps_since_last_encounter = 0
+                #         # 文字表示をリセット
+                #         game_state.displayed_chars = 0
+                #         game_state.char_display_timer = 0
+                #         game_state.full_message_displayed = False
+                #         # バトル開始メッセージ表示用にタイマーをセット
+                #         game_state.battle_timer = pygame.time.get_ticks()
                         
         elif game_state.state == GameState.BATTLE:
             # メッセージ自動送り処理
@@ -834,8 +967,10 @@ def main():
         screen.fill(GameConfig.SKY_BLUE)  # 空色の背景
         
         if game_state.state == GameState.FIELD:
-            draw_field()
-            player.draw()
+            # マップを描画し、オフセットを取得
+            map_offset_x, map_offset_y = draw_field(player, tmx_map)
+            # プレイヤーを描画（オフセットを適用）
+            player.draw(map_offset_x, map_offset_y)
         elif game_state.state == GameState.BATTLE:
             draw_battle_screen(player, game_state.wild_pokemon, game_state)
         
