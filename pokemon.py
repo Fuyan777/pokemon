@@ -73,6 +73,9 @@ class GameConfig:
     TILE_SIZE = 16                  # 1タイルのピクセル数
     MAP_WIDTH = 20                  # マップの横タイル数
     MAP_HEIGHT = 36                 # マップの縦タイル数
+    
+    # タイル当たり判定設定
+    WALKABLE_TILE_IDS = [3, 6]         # 歩行可能なタイルIDのリスト
 
 # 初期化
 pygame.init()
@@ -301,23 +304,38 @@ class TiledMap:
     
     def create_map_surface(self):
         """マップ全体をサーフェスに描画"""
-        # すべてのレイヤーを描画するサーフェスを作成
-        self.map_surface = pygame.Surface((self.width, self.height))
+        # 背景のサーフェスを作成（地面や通常レイヤー用）
+        self.background_surface = pygame.Surface((self.width, self.height))
+        self.background_surface.fill((0, 0, 0, 0))  # 透明で初期化
         
-        # 各レイヤーを描画
+        # 前景のサーフェスを作成（rockなどの障害物レイヤー用）
+        self.foreground_surface = pygame.Surface((self.width, self.height), pygame.SRCALPHA)
+        self.foreground_surface.fill((0, 0, 0, 0))  # 透明で初期化
+        
+        # レイヤーごとに適切なサーフェスに描画
         for layer in self.tmx_data.visible_layers:
-            if hasattr(layer, 'data'):
-                for x, y, gid in layer:
-                    # gidが0の場合はタイルなし
-                    if gid:
-                        # タイルを取得して描画
-                        tile = self.tmx_data.get_tile_image_by_gid(gid)
-                        if tile:
-                            self.map_surface.blit(tile, (x * self.tile_width, y * self.tile_height))
+            if not hasattr(layer, 'data'):
+                continue
+                
+            # 描画先のサーフェスを決定
+            target_surface = self.foreground_surface if layer.name in ['rock', 'collision', 'obstacles'] else self.background_surface
+            
+            for x, y, gid in layer:
+                # gidが0の場合はタイルなし
+                if gid:
+                    # タイルを取得して描画
+                    tile = self.tmx_data.get_tile_image_by_gid(gid)
+                    if tile:
+                        target_surface.blit(tile, (x * self.tile_width, y * self.tile_height))
         
-        # スケーリングしたマップサーフェスも作成
-        self.scaled_surface = pygame.transform.scale(
-            self.map_surface, 
+        # 背景と前景のスケーリングしたサーフェスを作成
+        self.scaled_background = pygame.transform.scale(
+            self.background_surface, 
+            (int(self.width * GameConfig.SCALE), int(self.height * GameConfig.SCALE))
+        )
+        
+        self.scaled_foreground = pygame.transform.scale(
+            self.foreground_surface, 
             (int(self.width * GameConfig.SCALE), int(self.height * GameConfig.SCALE))
         )
         
@@ -354,11 +372,17 @@ class TiledMap:
             if self.scaled_map_height + y_offset < GameConfig.HEIGHT:
                 y_offset = GameConfig.HEIGHT - self.scaled_map_height
         
-        # マップを描画（スケーリング済みサーフェスを使用）
-        screen.blit(self.scaled_surface, (x_offset, y_offset))
+        # 背景レイヤーを描画
+        screen.blit(self.scaled_background, (x_offset, y_offset))
         
         # オフセット値を返す（プレイヤー描画位置の計算に使用）
+        # これはプレイヤー描画後に、前景レイヤーを描画するための情報として使用
         return x_offset, y_offset
+    
+    def draw_foreground(self, screen, offset_x, offset_y):
+        """前景レイヤー（rockなど）を描画"""
+        # 前景レイヤー（障害物など）を後から描画
+        screen.blit(self.scaled_foreground, (offset_x, offset_y))
         
     def get_object_layer(self, name):
         """指定した名前のオブジェクトレイヤーを取得"""
@@ -375,19 +399,38 @@ class TiledMap:
         # マップ範囲外なら歩行不可
         if tile_x < 0 or tile_x >= self.tmx_data.width or tile_y < 0 or tile_y >= self.tmx_data.height:
             return False
-            
-        # 各レイヤーをチェック（ここでは簡単のため"rock"という名前のレイヤーが障害物とする）
+        
+        # GameConfigで定義された歩行可能なタイルIDのリストを使用
+        walkable_tile_ids = GameConfig.WALKABLE_TILE_IDS
+        
+        # 最初に障害物レイヤーをチェック（rock, collision, obstaclesレイヤー）
         for layer_name in ['rock', 'collision', 'obstacles']:
             try:
                 layer = self.tmx_data.get_layer_by_name(layer_name)
                 if layer and hasattr(layer, 'data'):
-                    # このレイヤーにタイルがあれば歩行不可
-                    if layer.data[tile_y][tile_x]:
-                        return False
+                    gid = layer.data[tile_y][tile_x]
+                    # このレイヤーにタイルがあって、歩行可能でなければ歩行不可
+                    if gid > 0:
+                        return False  # 障害物レイヤーに何かあれば歩行不可
             except (ValueError, AttributeError, KeyError):
                 # レイヤーが存在しない場合は無視
                 pass
-                
+        
+        # 背景レイヤーをチェック（backgroundレイヤー）
+        try:
+            background_layer = self.tmx_data.get_layer_by_name('background')
+            if background_layer and hasattr(background_layer, 'data'):
+                gid = background_layer.data[tile_y][tile_x]
+                # タイルがある場合
+                if gid > 0:
+                    # GIDがそのままタイルID（TMXファイル内の値）
+                    if gid in walkable_tile_ids:
+                        return True  # 歩行可能なタイルIDなら通過可能
+        except (ValueError, AttributeError, KeyError):
+            # backgroundレイヤーが存在しない場合は無視
+            pass
+                        
+        # デフォルトは歩行可能（障害物が無く、特定の制限もない場合）
         return True
 
 # フィールドを描画
@@ -717,6 +760,53 @@ def draw_battle_screen(player, wild_pokemon, state):
     if state.battle_state == GameState.BATTLE_ANIMATION:
         draw_fire_animation(state, wild_pokemon)
 
+# デバッグ情報を描画する関数
+def draw_debug_info(screen, player, tmx_map):
+    """デバッグ情報を描画する関数"""
+    # プレイヤーの位置を取得
+    player_pos_x = player.x + player.width/2
+    player_pos_y = player.y + player.height/2
+    
+    # プレイヤーの位置のタイルIDを取得
+    tile_ids = tmx_map.get_tile_id_at(player_pos_x, player_pos_y)
+    
+    # デバッグ情報を描画
+    font = get_font(10)
+    y_offset = 10
+    
+    # 座標情報
+    pos_text = f"座標: ({int(player_pos_x)}, {int(player_pos_y)})"
+    text_surface = font.render(pos_text, True, GameConfig.WHITE)
+    screen.blit(text_surface, (10, y_offset))
+    y_offset += 20
+    
+    # タイルID情報
+    for layer_name, tile_info in tile_ids.items():
+        if isinstance(tile_info, dict):
+            # 詳細情報がある場合
+            gid = tile_info.get('gid', 'N/A')
+            raw_gid = tile_info.get('raw_gid', 'N/A')
+            tileset = tile_info.get('tileset', 'N/A')
+            local_id = tile_info.get('local_id', 'N/A')
+            
+            # レイヤー情報を表示
+            layer_text = f"{layer_name}: GID={gid}, 純粋GID={raw_gid}"
+            text_surface = font.render(layer_text, True, GameConfig.WHITE)
+            screen.blit(text_surface, (10, y_offset))
+            y_offset += 15
+            
+            # タイルセット情報を表示
+            tileset_text = f"  タイルセット={tileset}, ローカルID={local_id}"
+            text_surface = font.render(tileset_text, True, GameConfig.WHITE)
+            screen.blit(text_surface, (10, y_offset))
+            y_offset += 20
+        else:
+            # 従来のシンプル表示（エラーなどの場合）
+            id_text = f"{layer_name}: タイルID = {tile_info}"
+            text_surface = font.render(id_text, True, GameConfig.WHITE)
+            screen.blit(text_surface, (10, y_offset))
+            y_offset += 20
+
 # メイン関数
 def main():
     player = Player()
@@ -967,12 +1057,19 @@ def main():
         screen.fill(GameConfig.SKY_BLUE)  # 空色の背景
         
         if game_state.state == GameState.FIELD:
-            # マップを描画し、オフセットを取得
+            # 背景マップを描画し、オフセットを取得
             map_offset_x, map_offset_y = draw_field(player, tmx_map)
-            # プレイヤーを描画（オフセットを適用）
+            # 前景レイヤー（rock等）を描画
+            tmx_map.draw_foreground(screen, map_offset_x, map_offset_y)
+            # プレイヤーを最後に描画（プレイヤーが最前面になる）
             player.draw(map_offset_x, map_offset_y)
         elif game_state.state == GameState.BATTLE:
             draw_battle_screen(player, game_state.wild_pokemon, game_state)
+        
+        # デバッグ情報の描画（特定のキーが押されたときのみ）
+        keys = pygame.key.get_pressed()
+        if keys[pygame.K_f]:  # Fキーでデバッグ情報を表示
+            draw_debug_info(screen, player, tmx_map)
         
         pygame.display.flip()
         clock.tick(GameConfig.FPS)
