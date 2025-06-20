@@ -105,7 +105,7 @@ class Player(pygame.sprite.Sprite):
         # 中央位置の計算（プレイヤーの幅を考慮）
         self.x = (map_width_px / 2) - (self.width / 2)
         # 下部位置の計算（プレイヤーの高さを考慮し、少し余裕を持たせる）
-        self.y = map_height_px - self.height - (2 * GameConfig.TILE_SIZE * GameConfig.SCALE)
+        self.y = map_height_px - self.height - (4 * GameConfig.TILE_SIZE * GameConfig.SCALE)
         
         self.speed = 3 * GameConfig.SCALE  # 移動速度もスケールに合わせる
         self.direction = "down"
@@ -187,45 +187,21 @@ class Player(pygame.sprite.Sprite):
 
     def move(self, keys, tmx_map=None):
         """プレイヤーの移動処理"""
-        new_x, new_y = self.x, self.y
         moved = False
         
-        if keys[pygame.K_LEFT]:
-            new_x -= self.speed
-            self.direction = "left"
-            moved = True
-        if keys[pygame.K_RIGHT]:
-            new_x += self.speed
-            self.direction = "right"
-            moved = True
+        # 斜め移動を防ぐため、1つの方向のみ処理（優先順位: 上下 > 左右）
         if keys[pygame.K_UP]:
-            new_y -= self.speed
-            self.direction = "up"
-            moved = True
-        if keys[pygame.K_DOWN]:
-            new_y += self.speed
-            self.direction = "down"
-            moved = True
-    
-        # TMXマップがある場合は衝突判定を行う
-        if tmx_map:
-            # 移動先がマップ内で歩行可能かチェック
-            if tmx_map.is_walkable(new_x + self.width/2, new_y + self.height/2):
-                # マップ範囲内に制限する
-                old_x, old_y = self.x, self.y
-                self.x = max(0, min(tmx_map.scaled_map_width - self.width, new_x))
-                self.y = max(0, min(tmx_map.scaled_map_height - self.height, new_y))
-                # 実際に移動したかチェック
-                moved = moved and (old_x != self.x or old_y != self.y)
-            else:
-                moved = False
-        else:
-            # TMXマップがない場合は単純に移動し、画面内に制限
-            old_x, old_y = self.x, self.y
-            self.x = max(0, min(GameConfig.WIDTH - self.width, new_x))
-            self.y = max(0, min(GameConfig.HEIGHT - self.height, new_y))
-            # 実際に移動したかチェック
-            moved = moved and (old_x != self.x or old_y != self.y)
+            if self._try_move(0, -self.speed, "up", tmx_map):
+                moved = True
+        elif keys[pygame.K_DOWN]:
+            if self._try_move(0, self.speed, "down", tmx_map):
+                moved = True
+        elif keys[pygame.K_LEFT]:
+            if self._try_move(-self.speed, 0, "left", tmx_map):
+                moved = True
+        elif keys[pygame.K_RIGHT]:
+            if self._try_move(self.speed, 0, "right", tmx_map):
+                moved = True
         
         # 移動状態を更新
         self.is_moving = moved
@@ -236,6 +212,59 @@ class Player(pygame.sprite.Sprite):
         # rectの位置を更新
         self.rect.x = self.x
         self.rect.y = self.y
+    
+    def _try_move(self, dx, dy, direction, tmx_map):
+        """指定された方向への移動を試行する"""
+        new_x = self.x + dx
+        new_y = self.y + dy
+        
+        # TMXマップがある場合は衝突判定を行う
+        if tmx_map:
+            # プレイヤーの当たり判定ポイントを複数チェック
+            collision_points = self._get_collision_points(new_x, new_y)
+            
+            # すべての当たり判定ポイントが歩行可能かチェック
+            for point_x, point_y in collision_points:
+                if not tmx_map.is_walkable(point_x, point_y):
+                    return False
+            
+            # マップ範囲内に制限する
+            old_x, old_y = self.x, self.y
+            self.x = max(0, min(tmx_map.scaled_map_width - self.width, new_x))
+            self.y = max(0, min(tmx_map.scaled_map_height - self.height, new_y))
+            
+            # 方向を更新
+            self.direction = direction
+            
+            # 実際に移動したかチェック
+            return old_x != self.x or old_y != self.y
+        else:
+            # TMXマップがない場合は単純に移動し、画面内に制限
+            old_x, old_y = self.x, self.y
+            self.x = max(0, min(GameConfig.WIDTH - self.width, new_x))
+            self.y = max(0, min(GameConfig.HEIGHT - self.height, new_y))
+            self.direction = direction
+            return old_x != self.x or old_y != self.y
+    
+    def _get_collision_points(self, x, y):
+        """プレイヤーの当たり判定ポイントを取得する"""
+        # プレイヤーの四隅と中心、さらに各辺の中点をチェック
+        margin = 2 * GameConfig.SCALE  # 少しマージンを取る
+        points = [
+            # 四隅
+            (x + margin, y + margin),  # 左上
+            (x + self.width - margin, y + margin),  # 右上
+            (x + margin, y + self.height - margin),  # 左下
+            (x + self.width - margin, y + self.height - margin),  # 右下
+            # 各辺の中点
+            (x + self.width/2, y + margin),  # 上辺中央
+            (x + self.width/2, y + self.height - margin),  # 下辺中央
+            (x + margin, y + self.height/2),  # 左辺中央
+            (x + self.width - margin, y + self.height/2),  # 右辺中央
+            # 中心
+            (x + self.width/2, y + self.height/2)  # 中心
+        ]
+        return points
     
     def update_animation(self):
         """アニメーションフレームを更新"""
