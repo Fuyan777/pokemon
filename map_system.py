@@ -39,9 +39,13 @@ class TiledMap:
         self.obstacles_surface = pygame.Surface((self.width, self.height), pygame.SRCALPHA)
         self.obstacles_surface.fill((0, 0, 0, 0))  # 透明で初期化
     
-        # 草むらのサーフェスを作成（grassyレイヤー用）
-        self.grassy_surface = pygame.Surface((self.width, self.height), pygame.SRCALPHA)
-        self.grassy_surface.fill((0, 0, 0, 0))  # 透明で初期化
+        # 草むら下部のサーフェスを作成（grassy_bottomレイヤー用）
+        self.grassy_bottom_surface = pygame.Surface((self.width, self.height), pygame.SRCALPHA)
+        self.grassy_bottom_surface.fill((0, 0, 0, 0))  # 透明で初期化
+        
+        # 草むら上部のサーフェスを作成（grassy_topレイヤー用）
+        self.grassy_top_surface = pygame.Surface((self.width, self.height), pygame.SRCALPHA)
+        self.grassy_top_surface.fill((0, 0, 0, 0))  # 透明で初期化
         
         # レイヤーごとに適切なサーフェスに描画
         for layer in self.tmx_data.visible_layers:
@@ -51,8 +55,10 @@ class TiledMap:
             # 描画先のサーフェスを決定
             if layer.name == 'obstacles':
                 target_surface = self.obstacles_surface
-            elif layer.name == 'grassy':
-                target_surface = self.grassy_surface
+            elif layer.name == 'grassy_bottom':
+                target_surface = self.grassy_bottom_surface
+            elif layer.name == 'grassy_top':
+                target_surface = self.grassy_top_surface
             else:  # 'background'またはその他のレイヤー
                 target_surface = self.background_surface
             
@@ -75,8 +81,13 @@ class TiledMap:
             (int(self.width * GameConfig.SCALE), int(self.height * GameConfig.SCALE))
         )
         
-        self.scaled_grassy = pygame.transform.scale(
-            self.grassy_surface, 
+        self.scaled_grassy_bottom = pygame.transform.scale(
+            self.grassy_bottom_surface, 
+            (int(self.width * GameConfig.SCALE), int(self.height * GameConfig.SCALE))
+        )
+        
+        self.scaled_grassy_top = pygame.transform.scale(
+            self.grassy_top_surface, 
             (int(self.width * GameConfig.SCALE), int(self.height * GameConfig.SCALE))
         )
         
@@ -116,9 +127,6 @@ class TiledMap:
         # 背景レイヤーを描画
         screen.blit(self.scaled_background, (x_offset, y_offset))
         
-        # 草むらレイヤーを描画
-        screen.blit(self.scaled_grassy, (x_offset, y_offset))
-        
         # オフセット値を返す（プレイヤー描画位置の計算とレイヤー描画に使用）
         return x_offset, y_offset
     
@@ -126,6 +134,16 @@ class TiledMap:
         """障害物レイヤー（obstacles）を描画"""
         # 障害物レイヤーを後から描画
         screen.blit(self.scaled_obstacles, (offset_x, offset_y))
+    
+    def draw_grassy_bottom(self, screen, offset_x, offset_y):
+        """草むら下部レイヤー（grassy_bottom）を描画"""
+        # 草むら下部レイヤーをプレイヤーの後に描画
+        screen.blit(self.scaled_grassy_bottom, (offset_x, offset_y))
+    
+    def draw_grassy_top(self, screen, offset_x, offset_y):
+        """草むら上部レイヤー（grassy_top）を描画"""
+        # 草むら上部レイヤーをプレイヤーの前に描画
+        screen.blit(self.scaled_grassy_top, (offset_x, offset_y))
         
     def get_object_layer(self, name):
         """指定した名前のオブジェクトレイヤーを取得"""
@@ -168,11 +186,11 @@ class TiledMap:
         if tile_x < 0 or tile_x >= self.tmx_data.width or tile_y < 0 or tile_y >= self.tmx_data.height:
             return False
         
-        # grassyレイヤーをチェック
+        # grassy_bottomレイヤーをチェック
         try:
-            grassy_layer = self.tmx_data.get_layer_by_name('grassy')
-            if grassy_layer and hasattr(grassy_layer, 'data'):
-                gid = grassy_layer.data[tile_y][tile_x]
+            grassy_bottom_layer = self.tmx_data.get_layer_by_name('grassy_bottom')
+            if grassy_bottom_layer and hasattr(grassy_bottom_layer, 'data'):
+                gid = grassy_bottom_layer.data[tile_y][tile_x]
                 # このレイヤーにタイルがあれば草むら
                 if gid > 0:
                     return True

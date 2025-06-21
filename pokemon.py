@@ -71,10 +71,10 @@ class GameEngine:
                 self.steps_since_last_encounter += 1
                 
                 # 草むら（grassy）の中にいるかチェック
-                if self.tmx_map.is_on_grassy(self.player.x + self.player.width/2, self.player.y + self.player.height/2):
-                    # ランダムエンカウント
-                    if self.steps_since_last_encounter > GameConfig.STEPS_BEFORE_ENCOUNTER and random.random() < GameConfig.ENCOUNTER_RATE:
-                        self._start_battle()
+                # if self.tmx_map.is_on_grassy(self.player.x + self.player.width/2, self.player.y + self.player.height/2):
+                #     # ランダムエンカウント
+                #     if self.steps_since_last_encounter > GameConfig.STEPS_BEFORE_ENCOUNTER and random.random() < GameConfig.ENCOUNTER_RATE:
+                #         self._start_battle()
     
     def _start_battle(self):
         """バトル開始処理"""
@@ -124,10 +124,14 @@ class GameEngine:
         """フィールド画面の描画"""
         # 背景マップを描画し、オフセットを取得
         map_offset_x, map_offset_y = self.field_renderer.draw_field(self.player, self.tmx_map)
+        # 草むら上部レイヤーを最初に描画（top）
+        self.tmx_map.draw_grassy_top(self.screen, map_offset_x, map_offset_y)
+        # プレイヤーを描画
+        self.player.draw(self.screen, map_offset_x, map_offset_y)
+        # 草むら下部レイヤーを描画（bottom）
+        self.tmx_map.draw_grassy_bottom(self.screen, map_offset_x, map_offset_y)
         # 前景レイヤー（rock等）を描画
         self.tmx_map.draw_foreground(self.screen, map_offset_x, map_offset_y)
-        # プレイヤーを最後に描画（プレイヤーが最前面になる）
-        self.player.draw(self.screen, map_offset_x, map_offset_y)
     
     def _render_battle(self):
         """バトル画面の描画"""
