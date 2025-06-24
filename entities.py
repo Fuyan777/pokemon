@@ -46,7 +46,7 @@ class GameConfig:
     MESSAGE_HALF_SEPARATE_IMG = IMG_DIR + "message_half_separate.png"
     
     # キャラクター画像
-    PLAYER_SPRITE_IMG = IMG_DIR + "pokemon_player_red_sprite.png"
+    PLAYER_SPRITE_IMG = IMG_DIR + "pokemon_red_sprite.png"
     HITOKAGE_IMG = IMG_DIR + "hitokage.png"
     
     # スキル画像
@@ -99,15 +99,15 @@ class Player(pygame.sprite.Sprite):
         map_width_px = GameConfig.MAP_WIDTH * GameConfig.TILE_SIZE * GameConfig.SCALE
         map_height_px = GameConfig.MAP_HEIGHT * GameConfig.TILE_SIZE * GameConfig.SCALE
         
-        self.width = 20 * GameConfig.SCALE  # サイズをスケールに合わせる
-        self.height = 20 * GameConfig.SCALE
+        self.width = 16 * GameConfig.SCALE  # 16pxベースサイズをスケールに合わせる
+        self.height = 16 * GameConfig.SCALE
         
         # 中央位置の計算（プレイヤーの幅を考慮）
         self.x = (map_width_px / 2) - (self.width / 2)
         # 下部位置の計算（プレイヤーの高さを考慮し、少し余裕を持たせる）
         self.y = map_height_px - self.height - (4 * GameConfig.TILE_SIZE * GameConfig.SCALE)
         
-        self.speed = 3 * GameConfig.SCALE  # 移動速度もスケールに合わせる
+        self.speed = 1 * GameConfig.SCALE  # 移動速度を遅く調整（1ピクセル/フレーム * スケール）
         self.direction = "down"
         
         # アニメーション関連
@@ -136,54 +136,80 @@ class Player(pygame.sprite.Sprite):
         self.rect = pygame.Rect(self.x, self.y, self.width, self.height)
     
     def get_sprite_frame(self, direction, frame):
-        """指定された方向とフレームのスプライトを切り出す"""
-        # 実際のスプライト位置とフレームのマッピング
-        if direction == "down":
-            row = 0
-            col = frame  # 0, 1, 2
-        elif direction == "left":
-            # 左向きは[1][0]と[1][1]を使用
-            row = 1
-            col = 0 if frame == 0 else 1 if frame == 1 else 0  # frame 2も0に戻す
-        elif direction == "right":
-            # 右向きは左向きを反転
-            row = 1
-            col = 0 if frame == 0 else 1 if frame == 1 else 0  # frame 2も0に戻す
-        elif direction == "up":
-            # 上向きは[1][2]と[2][0]を使用
-            if frame == 0:
-                row = 1
-                col = 2
-            elif frame == 1:
-                row = 2
-                col = 0
-            else:  # frame == 2
-                row = 1
-                col = 2
-        else:
-            row = 0
-            col = frame
+        """指定された方向とフレームのスプライトを切り出す（上下組み合わせ）"""
+        # img_usage.mdに従った上下部分の組み合わせ
+        upper_row, upper_col, lower_row, lower_col = self._get_sprite_positions(direction, frame)
         
-        # スプライトシートから切り出す
-        sprite_rect = pygame.Rect(
-            col * self.sprite_width,
-            row * self.sprite_height,
+        # 上部スプライトを切り出す
+        upper_rect = pygame.Rect(
+            upper_col * self.sprite_width,
+            upper_row * self.sprite_height,
             self.sprite_width,
             self.sprite_height
         )
+        upper_sprite = pygame.Surface((self.sprite_width, self.sprite_height), pygame.SRCALPHA)
+        upper_sprite.blit(self.sprite_sheet, (0, 0), upper_rect)
         
-        # 切り出したスプライトを作成
-        sprite = pygame.Surface((self.sprite_width, self.sprite_height), pygame.SRCALPHA)
-        sprite.blit(self.sprite_sheet, (0, 0), sprite_rect)
+        # 下部スプライトを切り出す
+        lower_rect = pygame.Rect(
+            lower_col * self.sprite_width,
+            lower_row * self.sprite_height,
+            self.sprite_width,
+            self.sprite_height
+        )
+        lower_sprite = pygame.Surface((self.sprite_width, self.sprite_height), pygame.SRCALPHA)
+        lower_sprite.blit(self.sprite_sheet, (0, 0), lower_rect)
         
         # 右向きの場合は左右反転
         if direction == "right":
-            sprite = pygame.transform.flip(sprite, True, False)
+            upper_sprite = pygame.transform.flip(upper_sprite, True, False)
+            lower_sprite = pygame.transform.flip(lower_sprite, True, False)
+        
+        # 上下を重ねて1つのスプライトを作成（16px同士がピッタリ重なる）
+        combined_sprite = pygame.Surface((self.sprite_width, self.sprite_height), pygame.SRCALPHA)
+        combined_sprite.blit(lower_sprite, (0, 0))  # 下部を先に描画
+        combined_sprite.blit(upper_sprite, (0, 0))  # 上部を重ねて描画
         
         # ゲームのスケールに合わせてリサイズ
-        scaled_sprite = pygame.transform.scale(sprite, (self.width, self.height))
+        scaled_sprite = pygame.transform.scale(combined_sprite, (self.width, self.height))
         
         return scaled_sprite
+    
+    def _get_sprite_positions(self, direction, frame):
+        """方向とフレームに応じたスプライト位置を取得"""
+        # img_usage.mdの仕様に従った位置マッピング
+        if direction == "down":
+            if frame == 0:  # 正面静止（止まっている時の下を使用）
+                return 0, 1, 0, 0  # 上：[0][1], 下：[0][0] (止まっている時の下)
+            elif frame == 1:  # 歩行1
+                return 0, 1, 1, 0  # 上：[0][1], 下：[1][0]
+            else:  # frame == 2, 歩行2
+                return 0, 1, 0, 2  # 上：[0][1], 下：[0][2]
+        elif direction == "left":
+            if frame == 0:  # 左向き静止
+                return 1, 1, 1, 2  # 上：[1][1], 下：[1][2]
+            elif frame == 1:  # 左向き歩行1
+                return 1, 1, 2, 0  # 上：[1][1], 下：[2][0]
+            else:  # frame == 2, 左向き歩行2
+                return 1, 1, 1, 2  # 上：[1][1], 下：[1][2]
+        elif direction == "right":
+            # 右向きは左向きと同じ位置だが、後で反転する
+            if frame == 0:  # 右向き静止
+                return 1, 1, 1, 2  # 上：[1][1], 下：[1][2]
+            elif frame == 1:  # 右向き歩行1
+                return 1, 1, 2, 0  # 上：[1][1], 下：[2][0]
+            else:  # frame == 2, 右向き歩行2
+                return 1, 1, 1, 2  # 上：[1][1], 下：[1][2]
+        elif direction == "up":
+            if frame == 0:  # 上向き静止
+                return 2, 1, 2, 2  # 上：[2][1], 下：[2][2]
+            elif frame == 1:  # 上向き歩行1
+                return 2, 1, 3, 0  # 上：[2][1], 下：[3][0]
+            else:  # frame == 2, 上向き歩行2
+                return 2, 1, 2, 2  # 上：[2][1], 下：[2][2]
+        else:
+            # デフォルト（正面）
+            return 0, 1, 0, 2  # 上：[0][1], 下：[0][2]
 
     def move(self, keys, tmx_map=None):
         """プレイヤーの移動処理"""
@@ -289,6 +315,29 @@ class Player(pygame.sprite.Sprite):
             self.animation_frame = 0
             self.image = self.get_sprite_frame(self.direction, 0)
 
+    def get_upper_sprite_frame(self, direction, frame):
+        """上部スプライトのみを取得"""
+        upper_row, upper_col, lower_row, lower_col = self._get_sprite_positions(direction, frame)
+        
+        # 上部スプライトを切り出す
+        upper_rect = pygame.Rect(
+            upper_col * self.sprite_width,
+            upper_row * self.sprite_height,
+            self.sprite_width,
+            self.sprite_height
+        )
+        upper_sprite = pygame.Surface((self.sprite_width, self.sprite_height), pygame.SRCALPHA)
+        upper_sprite.blit(self.sprite_sheet, (0, 0), upper_rect)
+        
+        # 右向きの場合は左右反転
+        if direction == "right":
+            upper_sprite = pygame.transform.flip(upper_sprite, True, False)
+        
+        # ゲームのスケールに合わせてリサイズ
+        scaled_sprite = pygame.transform.scale(upper_sprite, (self.width, self.height))
+        
+        return scaled_sprite
+
     def draw(self, screen, map_offset_x=0, map_offset_y=0):
         """プレイヤーを描画"""
         # オフセットを適用した位置に描画
@@ -297,6 +346,19 @@ class Player(pygame.sprite.Sprite):
         
         # 画像を描画
         screen.blit(self.image, (screen_x, screen_y))
+    
+    def draw_upper_only(self, screen, map_offset_x=0, map_offset_y=0):
+        """プレイヤーの上部スプライトのみを描画（草むら用）"""
+        # オフセットを適用した位置に描画
+        screen_x = self.x + map_offset_x
+        screen_y = self.y + map_offset_y
+        
+        # 現在のフレームの上部スプライトを取得
+        current_frame = self.animation_frame if self.is_moving else 0
+        upper_sprite = self.get_upper_sprite_frame(self.direction, current_frame)
+        
+        # 上部スプライトを描画
+        screen.blit(upper_sprite, (screen_x, screen_y))
 
 class WildPokemon(pygame.sprite.Sprite):
     """野生ポケモンクラス - 野生ポケモンの生成と管理"""

@@ -132,6 +132,12 @@ class GameEngine:
         self.tmx_map.draw_grassy_bottom(self.screen, map_offset_x, map_offset_y)
         # 前景レイヤー（rock等）を描画
         self.tmx_map.draw_foreground(self.screen, map_offset_x, map_offset_y)
+        
+        # 草むらにいる場合は、プレイヤーの上部スプライトを最上位に描画
+        player_center_x = self.player.x + self.player.width / 2
+        player_center_y = self.player.y + self.player.height / 2
+        if self.tmx_map.is_on_grassy(player_center_x, player_center_y):
+            self.player.draw_upper_only(self.screen, map_offset_x, map_offset_y)
     
     def _render_battle(self):
         """バトル画面の描画"""
