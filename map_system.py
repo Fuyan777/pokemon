@@ -41,6 +41,178 @@ class CombinedMap:
             print(f"マップの読み込みに失敗しました: {e}")
 
 
+class SingleMap:
+    """単体TMXマップを読み込み描画するクラス"""
+    
+    def __init__(self, map_name):
+        try:
+            # 指定されたマップを読み込む
+            filename = GameConfig.MAP_FILES[map_name]
+            self.tmx_data = pytmx.load_pygame(filename)
+            
+            # タイルサイズ
+            self.tile_width = GameConfig.TILE_SIZE
+            self.tile_height = GameConfig.TILE_SIZE
+            
+            # マップサイズ
+            self.map_width, self.map_height = GameConfig.MAP_SIZES[map_name]
+            
+            # ピクセル単位のマップサイズ
+            self.width = self.map_width * self.tile_width
+            self.height = self.map_height * self.tile_height
+            
+            # スケーリングサイズを計算
+            self.scaled_tile_width = self.tile_width * GameConfig.SCALE
+            self.scaled_tile_height = self.tile_height * GameConfig.SCALE
+            
+            # スケーリング後のマップサイズ
+            self.scaled_map_width = int(self.width * GameConfig.SCALE)
+            self.scaled_map_height = int(self.height * GameConfig.SCALE)
+            
+            # マップ画像を作成
+            self.create_map_surface()
+        except Exception as e:
+            print(f"マップの読み込みに失敗しました: {e}")
+    
+    def create_map_surface(self):
+        """マップ全体をサーフェスに描画"""
+        # 各レイヤー用のサーフェスを作成
+        self.background_surface = pygame.Surface((self.width, self.height))
+        self.background_surface.fill((0, 0, 0, 0))
+        
+        self.obstacles_surface = pygame.Surface((self.width, self.height), pygame.SRCALPHA)
+        self.obstacles_surface.fill((0, 0, 0, 0))
+        
+        self.grassy_bottom_surface = pygame.Surface((self.width, self.height), pygame.SRCALPHA)
+        self.grassy_bottom_surface.fill((0, 0, 0, 0))
+        
+        self.grassy_top_surface = pygame.Surface((self.width, self.height), pygame.SRCALPHA)
+        self.grassy_top_surface.fill((0, 0, 0, 0))
+        
+        # レイヤーごとに適切なサーフェスに描画
+        for layer in self.tmx_data.visible_layers:
+            if not hasattr(layer, 'data'):
+                continue
+                
+            # 描画先のサーフェスを決定
+            if layer.name == 'obstacles':
+                target_surface = self.obstacles_surface
+            elif layer.name == 'object':
+                target_surface = self.obstacles_surface  # objectレイヤーも障害物として扱う
+            elif layer.name == 'grassy_bottom':
+                target_surface = self.grassy_bottom_surface
+            elif layer.name == 'grassy_top':
+                target_surface = self.grassy_top_surface
+            else:  # 'background'またはその他のレイヤー
+                target_surface = self.background_surface
+            
+            for x, y, gid in layer:
+                if gid:
+                    tile = self.tmx_data.get_tile_image_by_gid(gid)
+                    if tile:
+                        target_surface.blit(tile, (x * self.tile_width, y * self.tile_height))
+        
+        # 各レイヤーをスケーリング
+        self.scaled_background = pygame.transform.scale(
+            self.background_surface, 
+            (int(self.width * GameConfig.SCALE), int(self.height * GameConfig.SCALE))
+        )
+        
+        self.scaled_obstacles = pygame.transform.scale(
+            self.obstacles_surface, 
+            (int(self.width * GameConfig.SCALE), int(self.height * GameConfig.SCALE))
+        )
+        
+        self.scaled_grassy_bottom = pygame.transform.scale(
+            self.grassy_bottom_surface, 
+            (int(self.width * GameConfig.SCALE), int(self.height * GameConfig.SCALE))
+        )
+        
+        self.scaled_grassy_top = pygame.transform.scale(
+            self.grassy_top_surface, 
+            (int(self.width * GameConfig.SCALE), int(self.height * GameConfig.SCALE))
+        )
+    
+    # draw系メソッドを継承用に追加
+    def draw(self, screen, center_x, center_y):
+        """プレイヤーを中心にマップを描画"""
+        screen_center_x = GameConfig.WIDTH // 2
+        screen_center_y = GameConfig.HEIGHT // 2
+        
+        x_offset = screen_center_x - center_x
+        y_offset = screen_center_y - center_y
+        
+        if self.scaled_map_width < GameConfig.WIDTH:
+            x_offset = (GameConfig.WIDTH - self.scaled_map_width) // 2
+        else:
+            x_offset = min(0, x_offset)
+            if self.scaled_map_width + x_offset < GameConfig.WIDTH:
+                x_offset = GameConfig.WIDTH - self.scaled_map_width
+    
+        if self.scaled_map_height < GameConfig.HEIGHT:
+            y_offset = (GameConfig.HEIGHT - self.scaled_map_height) // 2
+        else:
+            y_offset = min(0, y_offset)
+            if self.scaled_map_height + y_offset < GameConfig.HEIGHT:
+                y_offset = GameConfig.HEIGHT - self.scaled_map_height
+        
+        screen.blit(self.scaled_background, (x_offset, y_offset))
+        return x_offset, y_offset
+    
+    def draw_foreground(self, screen, offset_x, offset_y):
+        screen.blit(self.scaled_obstacles, (offset_x, offset_y))
+    
+    def draw_grassy_bottom(self, screen, offset_x, offset_y):
+        screen.blit(self.scaled_grassy_bottom, (offset_x, offset_y))
+    
+    def draw_grassy_top(self, screen, offset_x, offset_y):
+        screen.blit(self.scaled_grassy_top, (offset_x, offset_y))
+    
+    def is_walkable(self, x, y):
+        """指定した座標が歩行可能かどうかを判定"""
+        tile_x = int(x / self.scaled_tile_width)
+        tile_y = int(y / self.scaled_tile_height)
+        
+        if tile_x < 0 or tile_x >= self.map_width or tile_y < 0 or tile_y >= self.map_height:
+            return False
+        
+        try:
+            obstacles_layer = self.tmx_data.get_layer_by_name('obstacles')
+            if obstacles_layer and hasattr(obstacles_layer, 'data'):
+                gid = obstacles_layer.data[tile_y][tile_x]
+                if gid > 0:
+                    return False
+            
+            # objectレイヤーもチェック
+            object_layer = self.tmx_data.get_layer_by_name('object')
+            if object_layer and hasattr(object_layer, 'data'):
+                gid = object_layer.data[tile_y][tile_x]
+                if gid > 0:
+                    return False
+        except (ValueError, AttributeError, KeyError):
+            pass
+                    
+        return True
+    
+    def is_on_grassy(self, x, y):
+        """指定した座標が草むらの上かどうかを判定"""
+        tile_x = int(x / self.scaled_tile_width)
+        tile_y = int(y / self.scaled_tile_height)
+        
+        if tile_x < 0 or tile_x >= self.map_width or tile_y < 0 or tile_y >= self.map_height:
+            return False
+        
+        try:
+            grassy_bottom_layer = self.tmx_data.get_layer_by_name('grassy_bottom')
+            if grassy_bottom_layer and hasattr(grassy_bottom_layer, 'data'):
+                gid = grassy_bottom_layer.data[tile_y][tile_x]
+                if gid > 0:
+                    return True
+        except (ValueError, AttributeError, KeyError):
+            pass
+                    
+        return False
+
 class TiledMap(CombinedMap):
     """TMXマップを読み込み描画するクラス（後方互換性のため継承）"""
     pass
@@ -272,6 +444,32 @@ class TiledMap(CombinedMap):
                     
         # デフォルトは草むらではない
         return False
+    
+    def check_door_interaction(self, x, y):
+        """指定した座標でドアとの相互作用をチェック"""
+        # タイル座標に変換
+        tile_x = int(x / self.scaled_tile_width)
+        tile_y = int(y / self.scaled_tile_height)
+        
+        # マップ範囲外ならドアなし
+        if tile_x < 0 or tile_x >= self.map_width or tile_y < 0 or tile_y >= self.map_height:
+            return None
+        
+        # どのマップエリアにいるかを判定
+        road_height = GameConfig.MAP_SIZES["road"][1]
+        
+        if tile_y < road_height:
+            # 道マップエリア - ドアなし
+            return None
+        else:
+            # 町マップエリア
+            local_tile_y = tile_y - road_height
+            
+            # 特定の位置でのみlabマップへの移動を許可
+            if tile_x == 12 and local_tile_y == 11:
+                return "lab"
+        
+        return None
     
     def get_available_layers(self):
         """利用可能なTMXレイヤーのリストを返す（デバッグ用）"""

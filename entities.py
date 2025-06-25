@@ -65,7 +65,8 @@ class GameConfig:
     # マップファイル
     MAP_FILES = {
         "road": "pokemon_road_1.tmx",
-        "town": "pokemon_town.tmx"
+        "town": "pokemon_town.tmx",
+        "lab": "pokemon_tileset_okd_lab.tmx"
     }
     CURRENT_MAP = "road"  # 初期マップ
     
@@ -74,7 +75,8 @@ class GameConfig:
     # 各マップのサイズ
     MAP_SIZES = {
         "road": (20, 36),  # 横タイル数, 縦タイル数
-        "town": (20, 18)
+        "town": (20, 18),
+        "lab": (10, 12)
     }
     MAP_WIDTH = 20                  # デフォルトマップの横タイル数
     MAP_HEIGHT = 54                 # 結合後の総縦タイル数（36 + 18）
@@ -199,26 +201,28 @@ class Player(pygame.sprite.Sprite):
     def move(self, keys, tmx_map=None):
         """プレイヤーの移動処理"""
         moved = False
+        direction_changed = False
         
         # 斜め移動を防ぐため、1つの方向のみ処理（優先順位: 上下 > 左右）
         if keys[pygame.K_UP]:
-            if self._try_move(0, -self.speed, "up", tmx_map):
-                moved = True
+            moved = self._try_move(0, -self.speed, "up", tmx_map)
+            direction_changed = True
         elif keys[pygame.K_DOWN]:
-            if self._try_move(0, self.speed, "down", tmx_map):
-                moved = True
+            moved = self._try_move(0, self.speed, "down", tmx_map)
+            direction_changed = True
         elif keys[pygame.K_LEFT]:
-            if self._try_move(-self.speed, 0, "left", tmx_map):
-                moved = True
+            moved = self._try_move(-self.speed, 0, "left", tmx_map)
+            direction_changed = True
         elif keys[pygame.K_RIGHT]:
-            if self._try_move(self.speed, 0, "right", tmx_map):
-                moved = True
+            moved = self._try_move(self.speed, 0, "right", tmx_map)
+            direction_changed = True
         
         # 移動状態を更新
         self.is_moving = moved
         
-        # アニメーション更新
-        self.update_animation()
+        # 向きが変わった場合は、移動できなくてもアニメーションを更新
+        if direction_changed or moved:
+            self.update_animation()
         
         # rectの位置を更新
         self.rect.x = self.x
@@ -228,6 +232,9 @@ class Player(pygame.sprite.Sprite):
         """指定された方向への移動を試行する"""
         new_x = self.x + dx
         new_y = self.y + dy
+        
+        # 方向を更新（移動できなくても向きは変える）
+        self.direction = direction
         
         # TMXマップがある場合は衝突判定を行う
         if tmx_map:
@@ -244,9 +251,6 @@ class Player(pygame.sprite.Sprite):
             self.x = max(0, min(tmx_map.scaled_map_width - self.width, new_x))
             self.y = max(0, min(tmx_map.scaled_map_height - self.height, new_y))
             
-            # 方向を更新
-            self.direction = direction
-            
             # 実際に移動したかチェック
             return old_x != self.x or old_y != self.y
         else:
@@ -254,7 +258,6 @@ class Player(pygame.sprite.Sprite):
             old_x, old_y = self.x, self.y
             self.x = max(0, min(GameConfig.WIDTH - self.width, new_x))
             self.y = max(0, min(GameConfig.HEIGHT - self.height, new_y))
-            self.direction = direction
             return old_x != self.x or old_y != self.y
     
     def _get_collision_points(self, x, y):

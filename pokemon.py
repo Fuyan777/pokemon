@@ -10,7 +10,7 @@ from battle_manager import BattleManager, GameState
 from ui_renderer import FieldRenderer, BattleRenderer
 from input_manager import InputManager
 from animation_system import AnimationSystem
-from map_system import TiledMap
+from map_system import TiledMap, SingleMap
 
 class GameEngine:
     """ゲームエンジンクラス - ゲーム全体の制御を担当"""
@@ -36,6 +36,9 @@ class GameEngine:
         # ゲームオブジェクトの初期化
         self.player = Player(self.resource_manager)
         self.tmx_map = TiledMap()  # 結合マップを初期化
+        self.current_map_type = "combined"  # "combined" または "single"
+        self.single_map = None  # 単体マップ用
+        self.previous_position = None  # 前のマップでの位置を記録
         
         # ゲーム状態
         self.steps_since_last_encounter = 0
@@ -64,17 +67,60 @@ class GameEngine:
         """フィールド状態の更新"""
         if self.battle_manager.state == GameState.FIELD:
             old_x, old_y = self.player.x, self.player.y
-            self.input_manager.handle_field_input(self.player, self.tmx_map)
+            current_map = self.single_map if self.current_map_type == "single" else self.tmx_map
+            self.input_manager.handle_field_input(self.player, current_map)
             
             # 移動したかチェック
             if old_x != self.player.x or old_y != self.player.y:
                 self.steps_since_last_encounter += 1
                 
+                # マップ遷移チェック
+                player_center_x = self.player.x + self.player.width / 2
+                player_center_y = self.player.y + self.player.height / 2
+                tile_x = int(player_center_x / (GameConfig.TILE_SIZE * GameConfig.SCALE))
+                tile_y = int(player_center_y / (GameConfig.TILE_SIZE * GameConfig.SCALE))
+                
+                if self.current_map_type == "combined":
+                    door_target = self.tmx_map.check_door_interaction(player_center_x, player_center_y)
+                    
+                    if door_target:
+                        self._transition_to_map(door_target)
+                        return
+                else:
+                    # okd_labマップでの出口チェック
+                    if (tile_x == 4 and tile_y == 11) or (tile_x == 5 and tile_y == 11):
+                        self._return_to_previous_map()
+                        return
+                
                 # 草むら（grassy）の中にいるかチェック
-                # if self.tmx_map.is_on_grassy(self.player.x + self.player.width/2, self.player.y + self.player.height/2):
+                # if current_map.is_on_grassy(self.player.x + self.player.width/2, self.player.y + self.player.height/2):
                 #     # ランダムエンカウント
                 #     if self.steps_since_last_encounter > GameConfig.STEPS_BEFORE_ENCOUNTER and random.random() < GameConfig.ENCOUNTER_RATE:
                 #         self._start_battle()
+    
+    def _transition_to_map(self, map_name):
+        """指定されたマップに遷移"""
+        if map_name == "lab":
+            # 現在の位置を記録
+            self.previous_position = (self.player.x, self.player.y)
+            
+            # labマップに遷移
+            self.single_map = SingleMap(map_name)
+            self.current_map_type = "single"
+            # プレイヤーを入り口に配置（下部中央）
+            lab_width, lab_height = GameConfig.MAP_SIZES["lab"]
+            self.player.x = (lab_width * GameConfig.TILE_SIZE * GameConfig.SCALE / 2) - (self.player.width / 2)
+            self.player.y = (lab_height - 1) * GameConfig.TILE_SIZE * GameConfig.SCALE - self.player.height
+    
+    def _return_to_previous_map(self):
+        """前のマップに戻る"""
+        if self.previous_position:
+            # 結合マップに戻る
+            self.current_map_type = "combined"
+            self.single_map = None
+            # 記録された位置に復帰
+            self.player.x, self.player.y = self.previous_position
+            self.previous_position = None
     
     def _start_battle(self):
         """バトル開始処理"""
@@ -122,25 +168,28 @@ class GameEngine:
     
     def _render_field(self):
         """フィールド画面の描画"""
+        # 現在のマップを取得
+        current_map = self.single_map if self.current_map_type == "single" else self.tmx_map
+        
         # 背景マップを描画し、オフセットを取得
-        map_offset_x, map_offset_y = self.field_renderer.draw_field(self.player, self.tmx_map)
+        map_offset_x, map_offset_y = self.field_renderer.draw_field(self.player, current_map)
         
         # プレイヤーの位置を確認
         player_center_x = self.player.x + self.player.width / 2
         player_center_y = self.player.y + self.player.height / 2
-        is_on_grass = self.tmx_map.is_on_grassy(player_center_x, player_center_y)
+        is_on_grass = current_map.is_on_grassy(player_center_x, player_center_y)
         
         if is_on_grass:
             # 草むらにいる場合：プレイヤーの下半身のみ描画
             self.player.draw_lower_only(self.screen, map_offset_x, map_offset_y)
         
         # 草むら上部レイヤーを描画（top）
-        self.tmx_map.draw_grassy_top(self.screen, map_offset_x, map_offset_y)
+        current_map.draw_grassy_top(self.screen, map_offset_x, map_offset_y)
         
         # 草むら下部レイヤーを描画（bottom）
-        self.tmx_map.draw_grassy_bottom(self.screen, map_offset_x, map_offset_y)
+        current_map.draw_grassy_bottom(self.screen, map_offset_x, map_offset_y)
         # 前景レイヤー（rock等）を描画
-        self.tmx_map.draw_foreground(self.screen, map_offset_x, map_offset_y)
+        current_map.draw_foreground(self.screen, map_offset_x, map_offset_y)
         
         if is_on_grass:
             # 草むらにいる場合：プレイヤーの上部スプライトを最上位に描画
