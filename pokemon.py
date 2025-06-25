@@ -124,19 +124,29 @@ class GameEngine:
         """フィールド画面の描画"""
         # 背景マップを描画し、オフセットを取得
         map_offset_x, map_offset_y = self.field_renderer.draw_field(self.player, self.tmx_map)
-        # 草むら上部レイヤーを最初に描画（top）
+        
+        # プレイヤーの位置を確認
+        player_center_x = self.player.x + self.player.width / 2
+        player_center_y = self.player.y + self.player.height / 2
+        is_on_grass = self.tmx_map.is_on_grassy(player_center_x, player_center_y)
+        
+        if is_on_grass:
+            # 草むらにいる場合：プレイヤーの下半身のみ描画
+            self.player.draw_lower_only(self.screen, map_offset_x, map_offset_y)
+        else:
+            # 草むらにいない場合：プレイヤー全体を描画
+            self.player.draw(self.screen, map_offset_x, map_offset_y)
+        
+        # 草むら上部レイヤーを描画（top）
         self.tmx_map.draw_grassy_top(self.screen, map_offset_x, map_offset_y)
-        # プレイヤーを描画
-        self.player.draw(self.screen, map_offset_x, map_offset_y)
+        
         # 草むら下部レイヤーを描画（bottom）
         self.tmx_map.draw_grassy_bottom(self.screen, map_offset_x, map_offset_y)
         # 前景レイヤー（rock等）を描画
         self.tmx_map.draw_foreground(self.screen, map_offset_x, map_offset_y)
         
         # 草むらにいる場合は、プレイヤーの上部スプライトを最上位に描画
-        player_center_x = self.player.x + self.player.width / 2
-        player_center_y = self.player.y + self.player.height / 2
-        if self.tmx_map.is_on_grassy(player_center_x, player_center_y):
+        if is_on_grass:
             self.player.draw_upper_only(self.screen, map_offset_x, map_offset_y)
     
     def _render_battle(self):
