@@ -63,12 +63,21 @@ class GameConfig:
     }
     
     # マップファイル
-    MAP_FILE = "pokemon_road_1.tmx"
+    MAP_FILES = {
+        "road": "pokemon_road_1.tmx",
+        "town": "pokemon_town.tmx"
+    }
+    CURRENT_MAP = "road"  # 初期マップ
     
     # タイル設定
     TILE_SIZE = 16                  # 1タイルのピクセル数
-    MAP_WIDTH = 20                  # マップの横タイル数
-    MAP_HEIGHT = 36                 # マップの縦タイル数
+    # 各マップのサイズ
+    MAP_SIZES = {
+        "road": (20, 36),  # 横タイル数, 縦タイル数
+        "town": (20, 18)
+    }
+    MAP_WIDTH = 20                  # デフォルトマップの横タイル数
+    MAP_HEIGHT = 54                 # 結合後の総縦タイル数（36 + 18）
     
     # タイル当たり判定設定
     WALKABLE_TILE_IDS = [3, 6]         # 歩行可能なタイルIDのリスト
@@ -96,15 +105,17 @@ class Player(pygame.sprite.Sprite):
         super().__init__()
         self.resource_manager = resource_manager
 
-        map_width_px = GameConfig.MAP_WIDTH * GameConfig.TILE_SIZE * GameConfig.SCALE
-        map_height_px = GameConfig.MAP_HEIGHT * GameConfig.TILE_SIZE * GameConfig.SCALE
+        # 道マップのサイズを使用して初期位置を計算（元の位置を維持）
+        road_width, road_height = GameConfig.MAP_SIZES["road"]
+        map_width_px = road_width * GameConfig.TILE_SIZE * GameConfig.SCALE
+        map_height_px = road_height * GameConfig.TILE_SIZE * GameConfig.SCALE
         
         self.width = 20 * GameConfig.SCALE  # サイズをスケールに合わせる
         self.height = 20 * GameConfig.SCALE
         
         # 中央位置の計算（プレイヤーの幅を考慮）
         self.x = (map_width_px / 2) - (self.width / 2)
-        # 下部位置の計算（プレイヤーの高さを考慮し、少し余裕を持たせる）
+        # 下部位置の計算（プレイヤーの高さを考慮し、少し余裕を持たせる）- 道マップ内に配置
         self.y = map_height_px - self.height - (4 * GameConfig.TILE_SIZE * GameConfig.SCALE)
         
         self.speed = 1 * GameConfig.SCALE  # 移動速度もスケールに合わせる（遅くした）
@@ -248,21 +259,14 @@ class Player(pygame.sprite.Sprite):
     
     def _get_collision_points(self, x, y):
         """プレイヤーの当たり判定ポイントを取得する"""
-        # プレイヤーの四隅と中心、さらに各辺の中点をチェック
-        margin = 2 * GameConfig.SCALE  # 少しマージンを取る
+        # より緩い当たり判定：四隅のみをチェック、マージンを大きく
+        margin = 6 * GameConfig.SCALE  # マージンを大きくして隙間を通りやすく
         points = [
-            # 四隅
+            # 四隅のみ（簡素化して通りやすく）
             (x + margin, y + margin),  # 左上
             (x + self.width - margin, y + margin),  # 右上
             (x + margin, y + self.height - margin),  # 左下
             (x + self.width - margin, y + self.height - margin),  # 右下
-            # 各辺の中点
-            (x + self.width/2, y + margin),  # 上辺中央
-            (x + self.width/2, y + self.height - margin),  # 下辺中央
-            (x + margin, y + self.height/2),  # 左辺中央
-            (x + self.width - margin, y + self.height/2),  # 右辺中央
-            # 中心
-            (x + self.width/2, y + self.height/2)  # 中心
         ]
         return points
     

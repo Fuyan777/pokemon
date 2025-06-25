@@ -35,7 +35,7 @@ class GameEngine:
         
         # ゲームオブジェクトの初期化
         self.player = Player(self.resource_manager)
-        self.tmx_map = TiledMap(GameConfig.MAP_FILE)
+        self.tmx_map = TiledMap()  # 結合マップを初期化
         
         # ゲーム状態
         self.steps_since_last_encounter = 0
@@ -133,9 +133,6 @@ class GameEngine:
         if is_on_grass:
             # 草むらにいる場合：プレイヤーの下半身のみ描画
             self.player.draw_lower_only(self.screen, map_offset_x, map_offset_y)
-        else:
-            # 草むらにいない場合：プレイヤー全体を描画
-            self.player.draw(self.screen, map_offset_x, map_offset_y)
         
         # 草むら上部レイヤーを描画（top）
         self.tmx_map.draw_grassy_top(self.screen, map_offset_x, map_offset_y)
@@ -145,9 +142,12 @@ class GameEngine:
         # 前景レイヤー（rock等）を描画
         self.tmx_map.draw_foreground(self.screen, map_offset_x, map_offset_y)
         
-        # 草むらにいる場合は、プレイヤーの上部スプライトを最上位に描画
         if is_on_grass:
+            # 草むらにいる場合：プレイヤーの上部スプライトを最上位に描画
             self.player.draw_upper_only(self.screen, map_offset_x, map_offset_y)
+        else:
+            # 草むらにいない場合：プレイヤー全体を最前面に描画
+            self.player.draw(self.screen, map_offset_x, map_offset_y)
     
     def _render_battle(self):
         """バトル画面の描画"""

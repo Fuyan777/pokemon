@@ -2,53 +2,78 @@ import pygame
 import pytmx
 from entities import GameConfig
 
-class TiledMap:
-    """TMXマップを読み込み描画するクラス"""
+class CombinedMap:
+    """複数のTMXマップを結合して管理するクラス"""
     
-    def __init__(self, filename):
+    def __init__(self):
         try:
-            # TMXファイルを読み込む
-            self.tmx_data = pytmx.load_pygame(filename)
+            # 各マップを読み込む
+            self.maps = {}
+            for map_name, filename in GameConfig.MAP_FILES.items():
+                self.maps[map_name] = pytmx.load_pygame(filename)
+            
             # タイルサイズ
             self.tile_width = GameConfig.TILE_SIZE
             self.tile_height = GameConfig.TILE_SIZE
-            # マップサイズ（タイル数）
-            self.map_width = GameConfig.MAP_WIDTH
-            self.map_height = GameConfig.MAP_HEIGHT
+            
+            # 結合マップのサイズ（道マップの下に町マップを配置）
+            road_width, road_height = GameConfig.MAP_SIZES["road"]
+            town_width, town_height = GameConfig.MAP_SIZES["town"]
+            
+            self.map_width = max(road_width, town_width)  # 横幅は最大値
+            self.map_height = road_height + town_height   # 縦は合計
+            
             # ピクセル単位のマップサイズ
             self.width = self.map_width * self.tile_width
             self.height = self.map_height * self.tile_height
+            
             # スケーリングサイズを計算
             self.scaled_tile_width = self.tile_width * GameConfig.SCALE
             self.scaled_tile_height = self.tile_height * GameConfig.SCALE
+            
             # スケーリング後のマップサイズ
             self.scaled_map_width = int(self.width * GameConfig.SCALE)
             self.scaled_map_height = int(self.height * GameConfig.SCALE)
+            
             # マップ画像を作成
             self.create_map_surface()
         except Exception as e:
             print(f"マップの読み込みに失敗しました: {e}")
+
+
+class TiledMap(CombinedMap):
+    """TMXマップを読み込み描画するクラス（後方互換性のため継承）"""
+    pass
     
     def create_map_surface(self):
-        """マップ全体をサーフェスに描画"""
-        # 背景のサーフェスを作成（backgroundレイヤー用）
+        """結合マップ全体をサーフェスに描画"""
+        # 各レイヤー用のサーフェスを作成
         self.background_surface = pygame.Surface((self.width, self.height))
         self.background_surface.fill((0, 0, 0, 0))  # 透明で初期化
         
-        # 障害物のサーフェスを作成（obstaclesレイヤー用）
         self.obstacles_surface = pygame.Surface((self.width, self.height), pygame.SRCALPHA)
         self.obstacles_surface.fill((0, 0, 0, 0))  # 透明で初期化
     
-        # 草むら下部のサーフェスを作成（grassy_bottomレイヤー用）
         self.grassy_bottom_surface = pygame.Surface((self.width, self.height), pygame.SRCALPHA)
         self.grassy_bottom_surface.fill((0, 0, 0, 0))  # 透明で初期化
         
-        # 草むら上部のサーフェスを作成（grassy_topレイヤー用）
         self.grassy_top_surface = pygame.Surface((self.width, self.height), pygame.SRCALPHA)
         self.grassy_top_surface.fill((0, 0, 0, 0))  # 透明で初期化
         
-        # レイヤーごとに適切なサーフェスに描画
-        for layer in self.tmx_data.visible_layers:
+        # 各マップを結合描画
+        road_height = GameConfig.MAP_SIZES["road"][1]
+        
+        # 道マップ（上部）を描画
+        self._draw_map_to_surface("road", 0, 0)
+        
+        # 町マップ（下部）を描画
+        self._draw_map_to_surface("town", 0, road_height)
+    
+    def _draw_map_to_surface(self, map_name, offset_x, offset_y):
+        """指定されたマップを指定位置に描画"""
+        tmx_data = self.maps[map_name]
+        
+        for layer in tmx_data.visible_layers:
             if not hasattr(layer, 'data'):
                 continue
                 
@@ -66,9 +91,11 @@ class TiledMap:
                 # gidが0の場合はタイルなし
                 if gid:
                     # タイルを取得して描画
-                    tile = self.tmx_data.get_tile_image_by_gid(gid)
+                    tile = tmx_data.get_tile_image_by_gid(gid)
                     if tile:
-                        target_surface.blit(tile, (x * self.tile_width, y * self.tile_height))
+                        draw_x = (x + offset_x) * self.tile_width
+                        draw_y = (y + offset_y) * self.tile_height
+                        target_surface.blit(tile, (draw_x, draw_y))
         
         # 各レイヤーをスケーリング
         self.scaled_background = pygame.transform.scale(
@@ -158,20 +185,49 @@ class TiledMap:
         tile_y = int(y / self.scaled_tile_height)
         
         # マップ範囲外なら歩行不可
-        if tile_x < 0 or tile_x >= self.tmx_data.width or tile_y < 0 or tile_y >= self.tmx_data.height:
+        if tile_x < 0 or tile_x >= self.map_width or tile_y < 0 or tile_y >= self.map_height:
             return False
         
-        # obstaclesレイヤーのみチェック
+        # どのマップエリアにいるかを判定
+        road_height = GameConfig.MAP_SIZES["road"][1]
+        
+        if tile_y < road_height:
+            # 道マップエリア
+            tmx_data = self.maps["road"]
+            local_tile_y = tile_y
+        else:
+            # 町マップエリア
+            tmx_data = self.maps["town"]
+            local_tile_y = tile_y - road_height
+        
+        # 該当するマップの範囲内かチェック
+        if tile_x >= tmx_data.width or local_tile_y >= tmx_data.height:
+            return False
+        
+        # obstaclesレイヤーをチェック
         try:
-            obstacles_layer = self.tmx_data.get_layer_by_name('obstacles')
+            obstacles_layer = tmx_data.get_layer_by_name('obstacles')
             if obstacles_layer and hasattr(obstacles_layer, 'data'):
-                gid = obstacles_layer.data[tile_y][tile_x]
+                gid = obstacles_layer.data[local_tile_y][tile_x]
                 # このレイヤーにタイルがあれば歩行不可
                 if gid > 0:
                     return False
         except (ValueError, AttributeError, KeyError):
             # レイヤーが存在しない場合は無視
             pass
+        
+        # objectレイヤーもチェック（町マップの場合のみ）
+        if tile_y >= road_height:  # 町マップエリア
+            try:
+                object_layer = tmx_data.get_layer_by_name('object')
+                if object_layer and hasattr(object_layer, 'data'):
+                    gid = object_layer.data[local_tile_y][tile_x]
+                    # このレイヤーにタイルがあれば歩行不可
+                    if gid > 0:
+                        return False
+            except (ValueError, AttributeError, KeyError):
+                # レイヤーが存在しない場合は無視
+                pass
                     
         # デフォルトは歩行可能
         return True
@@ -183,14 +239,30 @@ class TiledMap:
         tile_y = int(y / self.scaled_tile_height)
         
         # マップ範囲外なら草むらではない
-        if tile_x < 0 or tile_x >= self.tmx_data.width or tile_y < 0 or tile_y >= self.tmx_data.height:
+        if tile_x < 0 or tile_x >= self.map_width or tile_y < 0 or tile_y >= self.map_height:
+            return False
+        
+        # どのマップエリアにいるかを判定
+        road_height = GameConfig.MAP_SIZES["road"][1]
+        
+        if tile_y < road_height:
+            # 道マップエリア
+            tmx_data = self.maps["road"]
+            local_tile_y = tile_y
+        else:
+            # 町マップエリア
+            tmx_data = self.maps["town"]
+            local_tile_y = tile_y - road_height
+        
+        # 該当するマップの範囲内かチェック
+        if tile_x >= tmx_data.width or local_tile_y >= tmx_data.height:
             return False
         
         # grassy_bottomレイヤーをチェック
         try:
-            grassy_bottom_layer = self.tmx_data.get_layer_by_name('grassy_bottom')
+            grassy_bottom_layer = tmx_data.get_layer_by_name('grassy_bottom')
             if grassy_bottom_layer and hasattr(grassy_bottom_layer, 'data'):
-                gid = grassy_bottom_layer.data[tile_y][tile_x]
+                gid = grassy_bottom_layer.data[local_tile_y][tile_x]
                 # このレイヤーにタイルがあれば草むら
                 if gid > 0:
                     return True
