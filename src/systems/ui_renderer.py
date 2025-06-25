@@ -1,8 +1,8 @@
 import pygame
-from entities import GameConfig
-from font_manager import FontManager
-from resource_manager import ResourceManager
-from battle_manager import GameState
+from src.entities.entities import GameConfig
+from src.managers.font_manager import FontManager
+from src.managers.resource_manager import ResourceManager
+from src.managers.battle_manager import GameState
 
 class UIRenderer:
     """UI描画の基底クラス"""

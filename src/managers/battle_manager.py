@@ -1,6 +1,6 @@
 import pygame
 import random
-from entities import GameConfig
+from src.entities.entities import GameConfig
 
 class GameState:
     """ゲーム状態の定数定義"""

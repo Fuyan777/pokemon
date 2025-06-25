@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <map version="1.10" tiledversion="1.11.2" orientation="orthogonal" renderorder="right-down" width="20" height="36" tilewidth="16" tileheight="16" infinite="0" nextlayerid="7" nextobjectid="1">
  <tileset firstgid="1" name="pokemon_tileset" tilewidth="16" tileheight="16" tilecount="16" columns="4">
-  <image source="pokemon_tileset.png" width="64" height="64"/>
+  <image source="../tilesets/pokemon_tileset.png" width="64" height="64"/>
   <tile id="6">
    <objectgroup draworder="index" id="2">
     <object id="1" x="4.44089e-16" y="-8.88178e-16" width="16" height="16"/>

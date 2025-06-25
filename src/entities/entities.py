@@ -1,6 +1,6 @@
 import pygame
 import random
-from resource_manager import ResourceManager
+from src.managers.resource_manager import ResourceManager
 
 class GameConfig:
     """ゲーム全体の設定を管理するクラス"""
@@ -24,7 +24,7 @@ class GameConfig:
     ROAD_COLOR = (210, 180, 140)     # 道の色
 
     # 戦闘関連
-    ENCOUNTER_RATE = 0.1             # 野生ポケモン遭遇率
+    ENCOUNTER_RATE = 0.03            # 野生ポケモン遭遇率
     STEPS_BEFORE_ENCOUNTER = 10      # 遭遇までの最小ステップ数
     MESSAGE_DISPLAY_SPEED = 50       # メッセージ表示速度（ミリ秒）
     MESSAGE_WAIT_TIME = 2000         # メッセージ表示後の待機時間（ミリ秒）
@@ -36,7 +36,7 @@ class GameConfig:
     FIRE_ANIMATION_SPEED = 100       # 炎アニメーションの速度（ミリ秒）
     
     # 画像のパス
-    IMG_DIR = "img/"
+    IMG_DIR = "assets/images/"
     HP_BAR_IMG = IMG_DIR + "hp.png"
     ENEMY_FRAME_IMG = IMG_DIR + "enemy_info_frame.png"
     MY_FRAME_IMG = IMG_DIR + "my_info_frame.png"
@@ -64,9 +64,9 @@ class GameConfig:
     
     # マップファイル
     MAP_FILES = {
-        "road": "pokemon_road_1.tmx",
-        "town": "pokemon_town.tmx",
-        "lab": "pokemon_tileset_okd_lab.tmx"
+        "road": "assets/maps/pokemon_road_1.tmx",
+        "town": "assets/maps/pokemon_town.tmx",
+        "lab": "assets/maps/pokemon_tileset_okd_lab.tmx"
     }
     CURRENT_MAP = "road"  # 初期マップ
     
@@ -198,80 +198,16 @@ class Player(pygame.sprite.Sprite):
         
         return scaled_sprite
 
-    def move(self, keys, tmx_map=None):
-        """プレイヤーの移動処理"""
-        moved = False
-        direction_changed = False
-        
-        # 斜め移動を防ぐため、1つの方向のみ処理（優先順位: 上下 > 左右）
-        if keys[pygame.K_UP]:
-            moved = self._try_move(0, -self.speed, "up", tmx_map)
-            direction_changed = True
-        elif keys[pygame.K_DOWN]:
-            moved = self._try_move(0, self.speed, "down", tmx_map)
-            direction_changed = True
-        elif keys[pygame.K_LEFT]:
-            moved = self._try_move(-self.speed, 0, "left", tmx_map)
-            direction_changed = True
-        elif keys[pygame.K_RIGHT]:
-            moved = self._try_move(self.speed, 0, "right", tmx_map)
-            direction_changed = True
-        
-        # 移動状態を更新
-        self.is_moving = moved
-        
-        # 向きが変わった場合は、移動できなくてもアニメーションを更新
-        if direction_changed or moved:
-            self.update_animation()
-        
-        # rectの位置を更新
-        self.rect.x = self.x
-        self.rect.y = self.y
+    def set_position(self, x, y):
+        """プレイヤーの位置を設定"""
+        self.x = x
+        self.y = y
+        self.rect.x = x
+        self.rect.y = y
     
-    def _try_move(self, dx, dy, direction, tmx_map):
-        """指定された方向への移動を試行する"""
-        new_x = self.x + dx
-        new_y = self.y + dy
-        
-        # 方向を更新（移動できなくても向きは変える）
-        self.direction = direction
-        
-        # TMXマップがある場合は衝突判定を行う
-        if tmx_map:
-            # プレイヤーの当たり判定ポイントを複数チェック
-            collision_points = self._get_collision_points(new_x, new_y)
-            
-            # すべての当たり判定ポイントが歩行可能かチェック
-            for point_x, point_y in collision_points:
-                if not tmx_map.is_walkable(point_x, point_y):
-                    return False
-            
-            # マップ範囲内に制限する
-            old_x, old_y = self.x, self.y
-            self.x = max(0, min(tmx_map.scaled_map_width - self.width, new_x))
-            self.y = max(0, min(tmx_map.scaled_map_height - self.height, new_y))
-            
-            # 実際に移動したかチェック
-            return old_x != self.x or old_y != self.y
-        else:
-            # TMXマップがない場合は単純に移動し、画面内に制限
-            old_x, old_y = self.x, self.y
-            self.x = max(0, min(GameConfig.WIDTH - self.width, new_x))
-            self.y = max(0, min(GameConfig.HEIGHT - self.height, new_y))
-            return old_x != self.x or old_y != self.y
-    
-    def _get_collision_points(self, x, y):
-        """プレイヤーの当たり判定ポイントを取得する"""
-        # より緩い当たり判定：四隅のみをチェック、マージンを大きく
-        margin = 6 * GameConfig.SCALE  # マージンを大きくして隙間を通りやすく
-        points = [
-            # 四隅のみ（簡素化して通りやすく）
-            (x + margin, y + margin),  # 左上
-            (x + self.width - margin, y + margin),  # 右上
-            (x + margin, y + self.height - margin),  # 左下
-            (x + self.width - margin, y + self.height - margin),  # 右下
-        ]
-        return points
+    def get_center_position(self):
+        """プレイヤーの中心座標を取得"""
+        return self.x + self.width / 2, self.y + self.height / 2
     
     def update_animation(self):
         """アニメーションフレームを更新"""

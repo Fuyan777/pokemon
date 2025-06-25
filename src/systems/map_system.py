@@ -1,6 +1,6 @@
 import pygame
 import pytmx
-from entities import GameConfig
+from src.entities.entities import GameConfig
 
 class CombinedMap:
     """複数のTMXマップを結合して管理するクラス"""

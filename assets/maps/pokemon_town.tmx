@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <map version="1.10" tiledversion="1.11.2" orientation="orthogonal" renderorder="right-down" width="20" height="18" tilewidth="16" tileheight="16" infinite="0" nextlayerid="6" nextobjectid="1">
- <tileset firstgid="1" source="pokemon_tileset_town.tsx"/>
+ <tileset firstgid="1" source="../tilesets/pokemon_tileset_town.tsx"/>
  <layer id="1" name="background" width="20" height="18">
   <data encoding="csv">
 3,3,3,3,3,3,3,3,3,3,23,23,3,3,3,3,3,3,3,3,

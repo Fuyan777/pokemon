@@ -1,5 +1,5 @@
 import pygame
-from entities import GameConfig
+from src.entities.entities import GameConfig
 
 class AnimationSystem:
     """アニメーションシステム - バトルエフェクトのアニメーション管理"""

@@ -1,5 +1,5 @@
 import pygame
-from battle_manager import GameState
+from src.managers.battle_manager import GameState
 
 class InputManager:
     """入力処理を管理するクラス - キーボード入力の処理を担当"""
