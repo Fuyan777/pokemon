@@ -3,7 +3,7 @@ import sys
 import random
 
 # モジュールのインポート
-from src.entities.entities import GameConfig, Player, WildPokemon
+from src.entities.entities import GameConfig, Player, WildPokemon, NPC
 from src.managers.font_manager import FontManager
 from src.managers.resource_manager import ResourceManager
 from src.managers.battle_manager import BattleManager, GameState
@@ -55,6 +55,27 @@ class GameEngine:
         
         self.all_sprites.add(self.player)
         self.player_group.add(self.player)
+        
+        # NPCの初期化
+        self.npcs = {}
+        self._initialize_npcs()
+
+    def _initialize_npcs(self):
+        """各マップのNPCを初期化"""
+        # labマップのNPC
+        self.npcs["lab"] = []
+        
+        # okdを配置（位置は16x16のタイル座標 * スケール）
+        okd_x = 5 * GameConfig.TILE_SIZE * GameConfig.SCALE
+        okd_y = 8 * GameConfig.TILE_SIZE * GameConfig.SCALE
+        okd = NPC(self.resource_manager, "okd", okd_x, okd_y, GameConfig.OKD_IMG)
+        self.npcs["lab"].append(okd)
+        
+        # rivalを配置
+        rival_x = 3 * GameConfig.TILE_SIZE * GameConfig.SCALE
+        rival_y = 6 * GameConfig.TILE_SIZE * GameConfig.SCALE
+        rival = NPC(self.resource_manager, "rival", rival_x, rival_y, GameConfig.RIVAL_IMG)
+        self.npcs["lab"].append(rival)
 
     def handle_events(self):
         """イベント処理"""
@@ -165,6 +186,13 @@ class GameEngine:
         current_map.draw_grassy_bottom(self.screen, map_offset_x, map_offset_y)
         # 前景レイヤー（rock等）を描画
         current_map.draw_foreground(self.screen, map_offset_x, map_offset_y)
+        
+        # NPCを描画
+        if self.map_transition_manager.is_single_map() and self.map_transition_manager.single_map:
+            # 単体マップの場合、マップ名から決定
+            if hasattr(self.map_transition_manager.single_map, 'tmx_data'):
+                # labマップの場合はNPCを描画
+                current_map.draw_npcs(self.screen, self.npcs["lab"], map_offset_x, map_offset_y)
         
         if is_on_grass:
             # 草むらにいる場合：プレイヤーの上部スプライトを最上位に描画

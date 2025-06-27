@@ -168,6 +168,11 @@ class SingleMap:
     def draw_grassy_top(self, screen, offset_x, offset_y):
         screen.blit(self.scaled_grassy_top, (offset_x, offset_y))
     
+    def draw_npcs(self, screen, npcs, offset_x, offset_y):
+        """NPCを描画"""
+        for npc in npcs:
+            npc.draw(screen, offset_x, offset_y)
+    
     def is_walkable(self, x, y):
         """指定した座標が歩行可能かどうかを判定"""
         tile_x = int(x / self.scaled_tile_width)

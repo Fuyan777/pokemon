@@ -24,7 +24,7 @@ class GameConfig:
     ROAD_COLOR = (210, 180, 140)     # 道の色
 
     # 戦闘関連
-    ENCOUNTER_RATE = 0.03            # 野生ポケモン遭遇率
+    ENCOUNTER_RATE = 0.01            # 野生ポケモン遭遇率
     STEPS_BEFORE_ENCOUNTER = 10      # 遭遇までの最小ステップ数
     MESSAGE_DISPLAY_SPEED = 50       # メッセージ表示速度（ミリ秒）
     MESSAGE_WAIT_TIME = 2000         # メッセージ表示後の待機時間（ミリ秒）
@@ -48,6 +48,8 @@ class GameConfig:
     # キャラクター画像
     PLAYER_SPRITE_IMG = IMG_DIR + "pokemon_player_red_sprite.png"
     HITOKAGE_IMG = IMG_DIR + "hitokage.png"
+    OKD_IMG = IMG_DIR + "okd.png"
+    RIVAL_IMG = IMG_DIR + "rival.png"
     
     # スキル画像
     FIRE_SMALL_IMG = IMG_DIR + "fire_small.png"
@@ -285,3 +287,80 @@ class WildPokemon(pygame.sprite.Sprite):
         self.image = self.resource_manager.load_image(image_path, (120, 120))
         # スプライト用のrectを設定（位置は固定）
         self.rect = pygame.Rect(90 * GameConfig.SCALE, -10, 50 * GameConfig.SCALE, 50 * GameConfig.SCALE)
+
+class NPC(pygame.sprite.Sprite):
+    """NPCクラス - ノンプレイヤーキャラクターの制御を担当"""
+    
+    def __init__(self, resource_manager: ResourceManager, npc_id, x, y, sprite_img):
+        super().__init__()
+        self.resource_manager = resource_manager
+        self.npc_id = npc_id
+        
+        # NPCの位置とサイズ
+        self.width = 20 * GameConfig.SCALE
+        self.height = 20 * GameConfig.SCALE
+        self.x = x
+        self.y = y
+        
+        # アニメーション関連
+        self.direction = "down"
+        self.animation_frame = 0
+        self.animation_timer = 0
+        self.is_moving = False
+        
+        # スプライトシートを読み込む
+        self.sprite_sheet = self.resource_manager.load_image(sprite_img)
+        
+        # スプライトのサイズ（スプライトシートでの1フレームのサイズ）
+        self.sprite_width = 16
+        self.sprite_height = 16
+        
+        # 初期画像を設定
+        self.image = self.get_sprite_frame(self.direction, 0)
+        
+        # スプライト用のrectを設定
+        self.rect = pygame.Rect(self.x, self.y, self.width, self.height)
+    
+    def get_sprite_frame(self, direction, frame):
+        """指定された方向とフレームのスプライトを切り出す"""
+        if direction == "down":
+            row = 0
+            col = frame
+        elif direction == "left":
+            row = 2
+            col = frame
+        elif direction == "right":
+            row = 3
+            col = frame
+        elif direction == "up":
+            row = 1
+            col = frame
+        else:
+            row = 0
+            col = frame
+        
+        # スプライトシートから切り出す
+        sprite_rect = pygame.Rect(
+            col * self.sprite_width,
+            row * self.sprite_height,
+            self.sprite_width,
+            self.sprite_height
+        )
+        
+        # 切り出したスプライトを作成
+        sprite = pygame.Surface((self.sprite_width, self.sprite_height), pygame.SRCALPHA)
+        sprite.blit(self.sprite_sheet, (0, 0), sprite_rect)
+        
+        # ゲームのスケールに合わせてリサイズ
+        scaled_sprite = pygame.transform.scale(sprite, (self.width, self.height))
+        
+        return scaled_sprite
+    
+    def draw(self, screen, map_offset_x=0, map_offset_y=0):
+        """NPCを描画"""
+        # オフセットを適用した位置に描画
+        screen_x = self.x + map_offset_x
+        screen_y = self.y + map_offset_y
+        
+        # 画像を描画
+        screen.blit(self.image, (screen_x, screen_y))
