@@ -1,6 +1,7 @@
 import pygame
 import pytmx
 from src.entities.entities import GameConfig
+from src.managers.font_manager import FontManager
 
 class CombinedMap:
     """複数のTMXマップを結合して管理するクラス"""
@@ -68,6 +69,10 @@ class SingleMap:
             # スケーリング後のマップサイズ
             self.scaled_map_width = int(self.width * GameConfig.SCALE)
             self.scaled_map_height = int(self.height * GameConfig.SCALE)
+            
+            # デバッグモード
+            self.debug_mode = False
+            self.font_manager = FontManager()
             
             # マップ画像を作成
             self.create_map_surface()
@@ -173,6 +178,85 @@ class SingleMap:
         for npc in npcs:
             npc.draw(screen, offset_x, offset_y)
     
+    def toggle_debug_mode(self):
+        """デバッグモードの切り替え"""
+        self.debug_mode = not self.debug_mode
+    
+    def draw_debug_info(self, screen, player_x, player_y, offset_x, offset_y, steps_since_encounter=0):
+        """デバッグ情報を描画"""
+        if not self.debug_mode:
+            return
+        
+        # タイル座標を計算
+        tile_x = int(player_x / self.scaled_tile_width)
+        tile_y = int(player_y / self.scaled_tile_height)
+        
+        # 草むらにいるかチェック
+        is_on_grass = self.is_on_grassy(player_x, player_y)
+        
+        # デバッグ情報を表示
+        debug_text = [
+            f"Player: ({int(player_x)}, {int(player_y)})",
+            f"Tile: ({tile_x}, {tile_y})",
+            f"Map: {self.map_width}x{self.map_height}",
+            f"Scaled Tile: {self.scaled_tile_width}x{self.scaled_tile_height}",
+            f"On Grass: {is_on_grass}",
+            f"Steps: {steps_since_encounter}/10"
+        ]
+        
+        # 背景描画
+        for i, text in enumerate(debug_text):
+            y_pos = 10 + i * 20
+            text_surface = self.font_manager.get_font(14).render(text, True, (255, 255, 255))
+            bg_rect = pygame.Rect(5, y_pos - 2, text_surface.get_width() + 10, text_surface.get_height() + 4)
+            pygame.draw.rect(screen, (0, 0, 0, 128), bg_rect)
+            screen.blit(text_surface, (10, y_pos))
+        
+        # タイルグリッドを描画
+        self.draw_tile_grid(screen, offset_x, offset_y)
+    
+    def draw_tile_grid(self, screen, offset_x, offset_y):
+        """タイルグリッドを描画"""
+        if not self.debug_mode:
+            return
+        
+        # グリッド線の色
+        grid_color = (255, 0, 0, 128)
+        
+        # 画面に表示される範囲のタイルを計算
+        start_x = max(0, int(-offset_x / self.scaled_tile_width))
+        start_y = max(0, int(-offset_y / self.scaled_tile_height))
+        end_x = min(self.map_width, int((-offset_x + GameConfig.WIDTH) / self.scaled_tile_width) + 1)
+        end_y = min(self.map_height, int((-offset_y + GameConfig.HEIGHT) / self.scaled_tile_height) + 1)
+        
+        # 縦線を描画
+        for x in range(start_x, end_x + 1):
+            screen_x = x * self.scaled_tile_width + offset_x
+            if 0 <= screen_x <= GameConfig.WIDTH:
+                pygame.draw.line(screen, grid_color, 
+                               (screen_x, max(0, offset_y)), 
+                               (screen_x, min(GameConfig.HEIGHT, self.scaled_map_height + offset_y)))
+        
+        # 横線を描画
+        for y in range(start_y, end_y + 1):
+            screen_y = y * self.scaled_tile_height + offset_y
+            if 0 <= screen_y <= GameConfig.HEIGHT:
+                pygame.draw.line(screen, grid_color, 
+                               (max(0, offset_x), screen_y), 
+                               (min(GameConfig.WIDTH, self.scaled_map_width + offset_x), screen_y))
+        
+        # タイル座標を表示
+        for x in range(start_x, end_x):
+            for y in range(start_y, end_y):
+                screen_x = x * self.scaled_tile_width + offset_x + 5
+                screen_y = y * self.scaled_tile_height + offset_y + 5
+                
+                if (0 <= screen_x <= GameConfig.WIDTH - 30 and 
+                    0 <= screen_y <= GameConfig.HEIGHT - 15):
+                    coord_text = f"{x},{y}"
+                    text_surface = self.font_manager.get_font(10).render(coord_text, True, (255, 255, 0))
+                    screen.blit(text_surface, (screen_x, screen_y))
+    
     def is_walkable(self, x, y):
         """指定した座標が歩行可能かどうかを判定"""
         tile_x = int(x / self.scaled_tile_width)
@@ -220,7 +304,11 @@ class SingleMap:
 
 class TiledMap(CombinedMap):
     """TMXマップを読み込み描画するクラス（後方互換性のため継承）"""
-    pass
+    
+    def __init__(self):
+        super().__init__()
+        self.debug_mode = False
+        self.font_manager = FontManager()
     
     def create_map_surface(self):
         """結合マップ全体をサーフェスに描画"""
@@ -475,6 +563,85 @@ class TiledMap(CombinedMap):
                 return "lab"
         
         return None
+    
+    def toggle_debug_mode(self):
+        """デバッグモードの切り替え"""
+        self.debug_mode = not self.debug_mode
+    
+    def draw_debug_info(self, screen, player_x, player_y, offset_x, offset_y, steps_since_encounter=0):
+        """デバッグ情報を描画"""
+        if not self.debug_mode:
+            return
+        
+        # タイル座標を計算
+        tile_x = int(player_x / self.scaled_tile_width)
+        tile_y = int(player_y / self.scaled_tile_height)
+        
+        # 草むらにいるかチェック
+        is_on_grass = self.is_on_grassy(player_x, player_y)
+        
+        # デバッグ情報を表示
+        debug_text = [
+            f"Player: ({int(player_x)}, {int(player_y)})",
+            f"Tile: ({tile_x}, {tile_y})",
+            f"Map: {self.map_width}x{self.map_height}",
+            f"Scaled Tile: {self.scaled_tile_width}x{self.scaled_tile_height}",
+            f"On Grass: {is_on_grass}",
+            f"Steps: {steps_since_encounter}/10"
+        ]
+        
+        # 背景描画
+        for i, text in enumerate(debug_text):
+            y_pos = 10 + i * 20
+            text_surface = self.font_manager.get_font(14).render(text, True, (255, 255, 255))
+            bg_rect = pygame.Rect(5, y_pos - 2, text_surface.get_width() + 10, text_surface.get_height() + 4)
+            pygame.draw.rect(screen, (0, 0, 0, 128), bg_rect)
+            screen.blit(text_surface, (10, y_pos))
+        
+        # タイルグリッドを描画
+        self.draw_tile_grid(screen, offset_x, offset_y)
+    
+    def draw_tile_grid(self, screen, offset_x, offset_y):
+        """タイルグリッドを描画"""
+        if not self.debug_mode:
+            return
+        
+        # グリッド線の色
+        grid_color = (255, 0, 0, 128)
+        
+        # 画面に表示される範囲のタイルを計算
+        start_x = max(0, int(-offset_x / self.scaled_tile_width))
+        start_y = max(0, int(-offset_y / self.scaled_tile_height))
+        end_x = min(self.map_width, int((-offset_x + GameConfig.WIDTH) / self.scaled_tile_width) + 1)
+        end_y = min(self.map_height, int((-offset_y + GameConfig.HEIGHT) / self.scaled_tile_height) + 1)
+        
+        # 縦線を描画
+        for x in range(start_x, end_x + 1):
+            screen_x = x * self.scaled_tile_width + offset_x
+            if 0 <= screen_x <= GameConfig.WIDTH:
+                pygame.draw.line(screen, grid_color, 
+                               (screen_x, max(0, offset_y)), 
+                               (screen_x, min(GameConfig.HEIGHT, self.scaled_map_height + offset_y)))
+        
+        # 横線を描画
+        for y in range(start_y, end_y + 1):
+            screen_y = y * self.scaled_tile_height + offset_y
+            if 0 <= screen_y <= GameConfig.HEIGHT:
+                pygame.draw.line(screen, grid_color, 
+                               (max(0, offset_x), screen_y), 
+                               (min(GameConfig.WIDTH, self.scaled_map_width + offset_x), screen_y))
+        
+        # タイル座標を表示
+        for x in range(start_x, end_x):
+            for y in range(start_y, end_y):
+                screen_x = x * self.scaled_tile_width + offset_x + 5
+                screen_y = y * self.scaled_tile_height + offset_y + 5
+                
+                if (0 <= screen_x <= GameConfig.WIDTH - 30 and 
+                    0 <= screen_y <= GameConfig.HEIGHT - 15):
+                    coord_text = f"{x},{y}"
+                    text_surface = self.font_manager.get_font(10).render(coord_text, True, (255, 255, 0))
+                    screen.blit(text_surface, (screen_x, screen_y))
     
     def get_available_layers(self):
         """利用可能なTMXレイヤーのリストを返す（デバッグ用）"""

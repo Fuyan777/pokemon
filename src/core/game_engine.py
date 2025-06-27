@@ -84,6 +84,11 @@ class GameEngine:
                 self.running = False
                 return
             
+            # デバッグモード切り替え（Dキー）
+            if event.type == pygame.KEYDOWN and event.key == pygame.K_d:
+                current_map = self.map_transition_manager.get_current_map(self.tmx_map)
+                current_map.toggle_debug_mode()
+            
             if self.battle_manager.state == GameState.BATTLE:
                 if not self.input_manager.handle_battle_input([event], self.battle_manager, self.player):
                     self.running = False
@@ -200,6 +205,10 @@ class GameEngine:
         else:
             # 草むらにいない場合：プレイヤー全体を最前面に描画
             self.player.draw(self.screen, map_offset_x, map_offset_y)
+        
+        # デバッグ情報を最上位に描画
+        current_map.draw_debug_info(self.screen, player_center_x, player_center_y, map_offset_x, map_offset_y, 
+                                  self.game_state_manager.steps_since_last_encounter)
     
     def _render_battle(self):
         """バトル画面の描画"""
