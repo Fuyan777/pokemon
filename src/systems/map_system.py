@@ -447,6 +447,22 @@ class TiledMap(CombinedMap):
         """草むら上部レイヤー（grassy_top）を描画"""
         # 草むら上部レイヤーをプレイヤーの前に描画
         screen.blit(self.scaled_grassy_top, (offset_x, offset_y))
+    
+    def draw_npcs(self, screen, npcs, offset_x, offset_y):
+        """NPCを描画"""
+        for npc in npcs:
+            npc.draw(screen, offset_x, offset_y)
+    
+    def check_npc_collision(self, x, y, npcs):
+        """指定した座標でNPCとの衝突をチェック"""
+        player_rect = pygame.Rect(x, y, 20 * GameConfig.SCALE, 20 * GameConfig.SCALE)
+        
+        for npc in npcs:
+            npc_rect = pygame.Rect(npc.x, npc.y, npc.width, npc.height)
+            if player_rect.colliderect(npc_rect):
+                return True
+        
+        return False
         
     def get_object_layer(self, name):
         """指定した名前のオブジェクトレイヤーを取得"""

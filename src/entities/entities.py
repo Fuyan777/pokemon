@@ -137,6 +137,9 @@ class Player(pygame.sprite.Sprite):
                                ["ほのお", "ノーマル"],  # 技のタイプ
                                [[25, 25], [35, 35]])]  # PP [現在値, 最大値]
         
+        # ラボ訪問フラグ
+        self.has_visited_lab = False
+        
         # スプライトシートを読み込む
         self.sprite_sheet = self.resource_manager.load_image(GameConfig.PLAYER_SPRITE_IMG)
         
@@ -308,6 +311,20 @@ class NPC(pygame.sprite.Sprite):
         self.animation_timer = 0
         self.is_moving = False
         
+        # 移動アニメーション関連
+        self.move_animation = {
+            'active': False,
+            'target_x': x,
+            'target_y': y,
+            'start_x': x,
+            'start_y': y,
+            'duration': 0,
+            'elapsed': 0
+        }
+        
+        # 表示フラグ
+        self.visible = True
+        
         # スプライトシートを読み込む
         self.sprite_sheet = self.resource_manager.load_image(sprite_img)
         
@@ -361,6 +378,10 @@ class NPC(pygame.sprite.Sprite):
     
     def draw(self, screen, map_offset_x=0, map_offset_y=0):
         """NPCを描画"""
+        # 非表示フラグがTrueの場合は描画しない
+        if not self.visible:
+            return
+            
         # オフセットを適用した位置に描画
         screen_x = self.x + map_offset_x
         screen_y = self.y + map_offset_y
@@ -390,6 +411,10 @@ class NPC(pygame.sprite.Sprite):
     
     def is_near_player(self, player_x, player_y):
         """プレイヤーが近くにいるかチェック"""
+        # 非表示の場合は相互作用しない
+        if not self.visible:
+            return False
+            
         distance_x = abs(self.x + self.width/2 - player_x)
         distance_y = abs(self.y + self.height/2 - player_y)
         
@@ -419,3 +444,67 @@ class NPC(pygame.sprite.Sprite):
         
         # 向きが変わったら画像を更新
         self.image = self.get_sprite_frame(self.direction, 0)
+    
+    def start_move_animation(self, target_x, target_y, duration=2000):
+        """NPCの移動アニメーションを開始"""
+        self.move_animation['active'] = True
+        self.move_animation['start_x'] = self.x
+        self.move_animation['start_y'] = self.y
+        self.move_animation['target_x'] = target_x
+        self.move_animation['target_y'] = target_y
+        self.move_animation['duration'] = duration
+        self.move_animation['elapsed'] = 0
+        self.is_moving = True
+        
+        # 移動方向を設定
+        diff_x = target_x - self.x
+        diff_y = target_y - self.y
+        
+        if abs(diff_x) > abs(diff_y):
+            if diff_x > 0:
+                self.direction = "right"
+            else:
+                self.direction = "left"
+        else:
+            if diff_y > 0:
+                self.direction = "down"
+            else:
+                self.direction = "up"
+    
+    def update_move_animation(self, dt):
+        """移動アニメーションを更新"""
+        if not self.move_animation['active']:
+            return
+        
+        self.move_animation['elapsed'] += dt
+        progress = min(1.0, self.move_animation['elapsed'] / self.move_animation['duration'])
+        
+        # 線形補間で位置を更新
+        start_x = self.move_animation['start_x']
+        start_y = self.move_animation['start_y']
+        target_x = self.move_animation['target_x']
+        target_y = self.move_animation['target_y']
+        
+        self.x = start_x + (target_x - start_x) * progress
+        self.y = start_y + (target_y - start_y) * progress
+        
+        # アニメーション完了チェック
+        if progress >= 1.0:
+            self.move_animation['active'] = False
+            self.is_moving = False
+            self.x = target_x
+            self.y = target_y
+    
+    def update_animation(self, dt):
+        """アニメーションフレームを更新"""
+        if self.is_moving:
+            # 移動中は歩行アニメーション
+            self.animation_timer += dt
+            if self.animation_timer > 200:  # 200ms間隔でフレーム変更
+                self.animation_frame = (self.animation_frame + 1) % 3
+                self.image = self.get_sprite_frame(self.direction, self.animation_frame)
+                self.animation_timer = 0
+        else:
+            # 停止中は正面向きのフレーム
+            self.animation_frame = 0
+            self.image = self.get_sprite_frame(self.direction, 0)

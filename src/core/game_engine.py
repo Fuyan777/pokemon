@@ -61,6 +61,9 @@ class GameEngine:
         # NPCの初期化
         self.npcs = {}
         self._initialize_npcs()
+        
+        # イベントシステム
+        self.events_triggered = set()  # 既に発生したイベントを記録
 
     def _initialize_npcs(self):
         """各マップのNPCを初期化"""
@@ -78,6 +81,16 @@ class GameEngine:
         rival_y = 3 * GameConfig.TILE_SIZE * GameConfig.SCALE
         rival = NPC(self.resource_manager, "rival", rival_x, rival_y, GameConfig.RIVAL_IMG)
         self.npcs["lab"].append(rival)
+        
+        # roadエリアのNPC
+        self.npcs["road"] = []
+        
+        # roadエリアのオーキド（初期位置は画面下の画面外に配置）
+        road_okd_x = 9 * GameConfig.TILE_SIZE * GameConfig.SCALE  # 移動先と同じX座標
+        road_okd_y = 38 * GameConfig.TILE_SIZE * GameConfig.SCALE  # 画面外の下部
+        road_okd = NPC(self.resource_manager, "okd", road_okd_x, road_okd_y, GameConfig.OKD_IMG)
+        road_okd.visible = False  # 初期状態では非表示
+        self.npcs["road"].append(road_okd)
 
     def handle_events(self):
         """イベント処理"""
@@ -117,6 +130,9 @@ class GameEngine:
             current_npcs = []
             if self.map_transition_manager.is_single_map() and self.map_transition_manager.single_map:
                 current_npcs = self.npcs.get("lab", [])
+            else:
+                # 結合マップの場合はroadエリアのNPCを取得
+                current_npcs = self.npcs.get("road", [])
             
             player_moved = self.player_movement.handle_input(keys, current_map, current_npcs)
             
@@ -130,6 +146,17 @@ class GameEngine:
                 
                 if transition_target:
                     self.map_transition_manager.transition_to_map(transition_target, self.player)
+                    
+                    # ラボに遷移した場合、has_visited_labフラグを設定
+                    if transition_target == "lab":
+                        self.player.has_visited_lab = True
+                        
+                        # roadエリアのオーキドを表示可能にする
+                        for npc in self.npcs.get("road", []):
+                            if npc.npc_id == "okd":
+                                npc.visible = True
+                                break
+                    
                     return
                 
                 # ゲーム状態更新（エンカウントチェック含む）
@@ -139,6 +166,9 @@ class GameEngine:
                 
                 if encounter_triggered:
                     self._start_battle()
+                
+                # イベントチェック
+                self._check_events()
     
     def _check_npc_interaction(self):
         """NPCとの相互作用をチェック"""
@@ -147,14 +177,76 @@ class GameEngine:
         # 現在のマップでNPCをチェック
         if self.map_transition_manager.is_single_map() and self.map_transition_manager.single_map:
             current_npcs = self.npcs.get("lab", [])
+        else:
+            # 結合マップの場合はroadエリアのNPCをチェック
+            current_npcs = self.npcs.get("road", [])
+        
+        for npc in current_npcs:
+            if npc.is_near_player(player_center_x, player_center_y):
+                # NPCをプレイヤーの方向に向ける
+                npc.face_player(player_center_x, player_center_y)
+                dialogue = npc.get_dialogue()
+                self.dialogue_manager.start_dialogue(dialogue)
+                break
+    
+    def _check_events(self):
+        """イベントの発生をチェック"""
+        player_center_x, player_center_y = self.player.get_center_position()
+        
+        # プレイヤーの位置をタイル座標に変換
+        current_map = self.map_transition_manager.get_current_map(self.tmx_map)
+        tile_x = int(player_center_x / current_map.scaled_tile_width)
+        tile_y = int(player_center_y / current_map.scaled_tile_height)
+        
+        # roadエリアでのオーキドの移動イベント：(10,35)または(11,35)に移動したとき
+        if not (self.map_transition_manager.is_single_map() and 
+                self.map_transition_manager.single_map):
+            # 結合マップ（roadエリア）でのイベントチェック
+            # ラボに訪問済みでイベントがまだ発生していない場合のみ
+            if self.player.has_visited_lab and \
+               ((tile_x == 10 and tile_y == 35) or (tile_x == 11 and tile_y == 35)) and \
+               "okd_walk_event" not in self.events_triggered:
+                self._trigger_okd_walk_event()
+                self.events_triggered.add("okd_walk_event")
+    
+    def _trigger_okd_walk_event(self):
+        """オーキドの歩行イベントを発生"""
+        # roadエリアのオーキドを取得
+        okd = None
+        for npc in self.npcs.get("road", []):
+            if npc.npc_id == "okd":
+                okd = npc
+                break
+        
+        if okd:
+            # プレイヤーの現在位置を取得
+            player_center_x, player_center_y = self.player.get_center_position()
+            current_map = self.map_transition_manager.get_current_map(self.tmx_map)
+            player_tile_x = int(player_center_x / current_map.scaled_tile_width)
+            player_tile_y = int(player_center_y / current_map.scaled_tile_height)
             
-            for npc in current_npcs:
-                if npc.is_near_player(player_center_x, player_center_y):
-                    # NPCをプレイヤーの方向に向ける
-                    npc.face_player(player_center_x, player_center_y)
-                    dialogue = npc.get_dialogue()
-                    self.dialogue_manager.start_dialogue(dialogue)
-                    break
+            # オーキドの移動先を(10,34)に変更
+            target_tile_x = 10
+            target_tile_y = 34
+            
+            # タイル座標をピクセル座標に変換
+            target_x = target_tile_x * GameConfig.TILE_SIZE * GameConfig.SCALE
+            target_y = target_tile_y * GameConfig.TILE_SIZE * GameConfig.SCALE
+            
+            okd.start_move_animation(target_x, target_y)
+    
+    def _update_npc_animations(self, dt):
+        """NPCのアニメーションを更新"""
+        # 現在のマップのNPCを更新
+        if self.map_transition_manager.is_single_map() and self.map_transition_manager.single_map:
+            current_npcs = self.npcs.get("lab", [])
+        else:
+            # 結合マップの場合はroadエリアのNPCを更新
+            current_npcs = self.npcs.get("road", [])
+        
+        for npc in current_npcs:
+            npc.update_move_animation(dt)
+            npc.update_animation(dt)
     
     
     def _start_battle(self):
@@ -231,6 +323,9 @@ class GameEngine:
             if hasattr(self.map_transition_manager.single_map, 'tmx_data'):
                 # labマップの場合はNPCを描画
                 current_map.draw_npcs(self.screen, self.npcs["lab"], map_offset_x, map_offset_y)
+        else:
+            # 結合マップの場合はroadエリアのNPCを描画
+            current_map.draw_npcs(self.screen, self.npcs["road"], map_offset_x, map_offset_y)
         
         if is_on_grass:
             # 草むらにいる場合：プレイヤーの上部スプライトを最上位に描画
@@ -279,6 +374,9 @@ class GameEngine:
             dt = self.clock.get_time()
             self.animation_system.update(dt)
             self.dialogue_manager.update(dt)
+            
+            # NPCアニメーション更新
+            self._update_npc_animations(dt)
             
             # 描画
             self.render()
