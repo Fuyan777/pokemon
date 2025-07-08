@@ -12,22 +12,36 @@ class GameStateManager:
     def __init__(self):
         self.steps_since_last_encounter = 0
         self.encounter_checker = EncounterChecker()
+        self.last_tile_x = None
+        self.last_tile_y = None
     
     def update_field_state(self, player_moved, player, current_map):
         """フィールド状態を更新"""
         if player_moved:
-            self.steps_since_last_encounter += 1
+            player_center_x = player.x + player.width / 2
+            player_center_y = player.y + player.height / 2
             
-            # 野生ポケモン遭遇チェック
-            if self._should_check_encounter():
-                player_center_x = player.x + player.width / 2
-                player_center_y = player.y + player.height / 2
+            # 現在のタイル座標を計算
+            if current_map:
+                current_tile_x = int(player_center_x / current_map.scaled_tile_width)
+                current_tile_y = int(player_center_y / current_map.scaled_tile_height)
                 
-                if self.encounter_checker.should_encounter(
-                    player_center_x, player_center_y, current_map
-                ):
-                    self.steps_since_last_encounter = 0
-                    return True  # エンカウント発生
+                # タイルが変わった場合のみ処理
+                if (self.last_tile_x != current_tile_x or self.last_tile_y != current_tile_y):
+                    self.last_tile_x = current_tile_x
+                    self.last_tile_y = current_tile_y
+                    
+                    # 草むらにいる場合のみステップ数をカウント
+                    if current_map.is_on_grassy(player_center_x, player_center_y):
+                        self.steps_since_last_encounter += 1
+                        
+                        # 野生ポケモン遭遇チェック
+                        if self._should_check_encounter():
+                            if self.encounter_checker.should_encounter(
+                                player_center_x, player_center_y, current_map
+                            ):
+                                self.steps_since_last_encounter = 0
+                                return True  # エンカウント発生
         
         return False
     

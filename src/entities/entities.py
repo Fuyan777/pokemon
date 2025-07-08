@@ -24,7 +24,7 @@ class GameConfig:
     ROAD_COLOR = (210, 180, 140)     # 道の色
 
     # 戦闘関連
-    ENCOUNTER_RATE = 0.01            # 野生ポケモン遭遇率
+    ENCOUNTER_RATE = 0.2            # 野生ポケモン遭遇率
     STEPS_BEFORE_ENCOUNTER = 10      # 遭遇までの最小ステップ数
     MESSAGE_DISPLAY_SPEED = 50       # メッセージ表示速度（ミリ秒）
     MESSAGE_WAIT_TIME = 2000         # メッセージ表示後の待機時間（ミリ秒）
@@ -320,6 +320,9 @@ class NPC(pygame.sprite.Sprite):
         
         # スプライト用のrectを設定
         self.rect = pygame.Rect(self.x, self.y, self.width, self.height)
+        
+        # 会話システム
+        self.dialogue = self._get_dialogue()
     
     def get_sprite_frame(self, direction, frame):
         """指定された方向とフレームのスプライトを切り出す"""
@@ -364,3 +367,55 @@ class NPC(pygame.sprite.Sprite):
         
         # 画像を描画
         screen.blit(self.image, (screen_x, screen_y))
+    
+    def _get_dialogue(self):
+        """NPCの会話内容を取得"""
+        if self.npc_id == "rival":
+            return [
+                "おう！久しぶりだな！",
+                "俺も今日からポケモントレーナーだ！",
+                "お前に負けるつもりはないぞ！"
+            ]
+        elif self.npc_id == "okd":
+            return [
+                "こんにちは、若いトレーナー",
+                "ポケモンを大切にするんじゃよ"
+            ]
+        else:
+            return ["..."]
+    
+    def get_dialogue(self):
+        """会話内容を取得"""
+        return self.dialogue
+    
+    def is_near_player(self, player_x, player_y):
+        """プレイヤーが近くにいるかチェック"""
+        distance_x = abs(self.x + self.width/2 - player_x)
+        distance_y = abs(self.y + self.height/2 - player_y)
+        
+        # 隣接するタイルの範囲内かチェック
+        threshold = GameConfig.TILE_SIZE * GameConfig.SCALE * 1.5
+        return distance_x <= threshold and distance_y <= threshold
+    
+    def face_player(self, player_x, player_y):
+        """プレイヤーの方向を向く"""
+        npc_center_x = self.x + self.width / 2
+        npc_center_y = self.y + self.height / 2
+        
+        diff_x = player_x - npc_center_x
+        diff_y = player_y - npc_center_y
+        
+        # より大きい差の方向を優先
+        if abs(diff_x) > abs(diff_y):
+            if diff_x > 0:
+                self.direction = "right"
+            else:
+                self.direction = "left"
+        else:
+            if diff_y > 0:
+                self.direction = "down"
+            else:
+                self.direction = "up"
+        
+        # 向きが変わったら画像を更新
+        self.image = self.get_sprite_frame(self.direction, 0)

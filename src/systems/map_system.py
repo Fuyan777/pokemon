@@ -178,6 +178,17 @@ class SingleMap:
         for npc in npcs:
             npc.draw(screen, offset_x, offset_y)
     
+    def check_npc_collision(self, x, y, npcs):
+        """指定した座標でNPCとの衝突をチェック"""
+        player_rect = pygame.Rect(x, y, 20 * GameConfig.SCALE, 20 * GameConfig.SCALE)
+        
+        for npc in npcs:
+            npc_rect = pygame.Rect(npc.x, npc.y, npc.width, npc.height)
+            if player_rect.colliderect(npc_rect):
+                return True
+        
+        return False
+    
     def toggle_debug_mode(self):
         """デバッグモードの切り替え"""
         self.debug_mode = not self.debug_mode

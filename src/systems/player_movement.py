@@ -14,23 +14,23 @@ class PlayerMovement:
         self.player = player
         self.collision_checker = CollisionChecker()
     
-    def handle_input(self, keys, current_map):
+    def handle_input(self, keys, current_map, npcs=None):
         """入力に基づいてプレイヤーを移動させる"""
         moved = False
         direction_changed = False
         
         # 斜め移動を防ぐため、1つの方向のみ処理
         if keys[pygame.K_UP]:
-            moved = self._attempt_move(0, -self.player.speed, "up", current_map)
+            moved = self._attempt_move(0, -self.player.speed, "up", current_map, npcs)
             direction_changed = True
         elif keys[pygame.K_DOWN]:
-            moved = self._attempt_move(0, self.player.speed, "down", current_map)
+            moved = self._attempt_move(0, self.player.speed, "down", current_map, npcs)
             direction_changed = True
         elif keys[pygame.K_LEFT]:
-            moved = self._attempt_move(-self.player.speed, 0, "left", current_map)
+            moved = self._attempt_move(-self.player.speed, 0, "left", current_map, npcs)
             direction_changed = True
         elif keys[pygame.K_RIGHT]:
-            moved = self._attempt_move(self.player.speed, 0, "right", current_map)
+            moved = self._attempt_move(self.player.speed, 0, "right", current_map, npcs)
             direction_changed = True
         
         # 移動状態とアニメーションを更新
@@ -45,7 +45,7 @@ class PlayerMovement:
         
         return moved
     
-    def _attempt_move(self, dx, dy, direction, current_map):
+    def _attempt_move(self, dx, dy, direction, current_map, npcs=None):
         """指定された方向への移動を試行"""
         new_x = self.player.x + dx
         new_y = self.player.y + dy
@@ -55,7 +55,7 @@ class PlayerMovement:
         
         # 衝突判定をチェック
         if current_map and not self.collision_checker.can_move_to(
-            self.player, new_x, new_y, current_map
+            self.player, new_x, new_y, current_map, npcs
         ):
             return False
         
@@ -77,13 +77,18 @@ class PlayerMovement:
 class CollisionChecker:
     """衝突判定を管理するクラス"""
     
-    def can_move_to(self, player, new_x, new_y, current_map):
+    def can_move_to(self, player, new_x, new_y, current_map, npcs=None):
         """指定された位置に移動可能かチェック"""
         collision_points = self._get_collision_points(player, new_x, new_y)
         
+        # マップとの衝突をチェック
         for point_x, point_y in collision_points:
             if not current_map.is_walkable(point_x, point_y):
                 return False
+        
+        # NPCとの衝突をチェック
+        if npcs and current_map.check_npc_collision(new_x, new_y, npcs):
+            return False
         
         return True
     

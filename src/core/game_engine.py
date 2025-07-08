@@ -14,6 +14,7 @@ from src.systems.map_system import TiledMap, SingleMap
 from src.managers.map_transition_manager import MapTransitionManager
 from src.systems.player_movement import PlayerMovement
 from src.managers.game_state_manager import GameStateManager
+from src.systems.dialogue_system import DialogueManager
 
 class GameEngine:
     """ゲームエンジンクラス - ゲーム全体の制御を担当"""
@@ -31,6 +32,7 @@ class GameEngine:
         self.battle_manager = BattleManager()
         self.input_manager = InputManager()
         self.animation_system = AnimationSystem()
+        self.dialogue_manager = DialogueManager(self.resource_manager, self.font_manager)
         
         # レンダラーの初期化
         self.field_renderer = FieldRenderer(self.screen, self.font_manager, self.resource_manager)
@@ -72,8 +74,8 @@ class GameEngine:
         self.npcs["lab"].append(okd)
         
         # rivalを配置
-        rival_x = 3 * GameConfig.TILE_SIZE * GameConfig.SCALE
-        rival_y = 6 * GameConfig.TILE_SIZE * GameConfig.SCALE
+        rival_x = 4 * GameConfig.TILE_SIZE * GameConfig.SCALE
+        rival_y = 3 * GameConfig.TILE_SIZE * GameConfig.SCALE
         rival = NPC(self.resource_manager, "rival", rival_x, rival_y, GameConfig.RIVAL_IMG)
         self.npcs["lab"].append(rival)
 
@@ -89,6 +91,15 @@ class GameEngine:
                 current_map = self.map_transition_manager.get_current_map(self.tmx_map)
                 current_map.toggle_debug_mode()
             
+            # 会話システムの入力処理
+            if self.dialogue_manager.handle_input(event):
+                return
+            
+            # NPC会話トリガー（Zキー）
+            if event.type == pygame.KEYDOWN and event.key == pygame.K_z:
+                if not self.dialogue_manager.is_active and self.battle_manager.state == GameState.FIELD:
+                    self._check_npc_interaction()
+            
             if self.battle_manager.state == GameState.BATTLE:
                 if not self.input_manager.handle_battle_input([event], self.battle_manager, self.player):
                     self.running = False
@@ -101,7 +112,13 @@ class GameEngine:
             
             # プレイヤー移動処理
             keys = pygame.key.get_pressed()
-            player_moved = self.player_movement.handle_input(keys, current_map)
+            
+            # 現在のマップに応じてNPCリストを取得
+            current_npcs = []
+            if self.map_transition_manager.is_single_map() and self.map_transition_manager.single_map:
+                current_npcs = self.npcs.get("lab", [])
+            
+            player_moved = self.player_movement.handle_input(keys, current_map, current_npcs)
             
             if player_moved:
                 # マップ遷移チェック
@@ -122,6 +139,22 @@ class GameEngine:
                 
                 if encounter_triggered:
                     self._start_battle()
+    
+    def _check_npc_interaction(self):
+        """NPCとの相互作用をチェック"""
+        player_center_x, player_center_y = self.player.get_center_position()
+        
+        # 現在のマップでNPCをチェック
+        if self.map_transition_manager.is_single_map() and self.map_transition_manager.single_map:
+            current_npcs = self.npcs.get("lab", [])
+            
+            for npc in current_npcs:
+                if npc.is_near_player(player_center_x, player_center_y):
+                    # NPCをプレイヤーの方向に向ける
+                    npc.face_player(player_center_x, player_center_y)
+                    dialogue = npc.get_dialogue()
+                    self.dialogue_manager.start_dialogue(dialogue)
+                    break
     
     
     def _start_battle(self):
@@ -209,6 +242,9 @@ class GameEngine:
         # デバッグ情報を最上位に描画
         current_map.draw_debug_info(self.screen, player_center_x, player_center_y, map_offset_x, map_offset_y, 
                                   self.game_state_manager.steps_since_last_encounter)
+        
+        # 会話システムを描画
+        self.dialogue_manager.draw(self.screen)
     
     def _render_battle(self):
         """バトル画面の描画"""
@@ -242,6 +278,7 @@ class GameEngine:
             # アニメーション更新
             dt = self.clock.get_time()
             self.animation_system.update(dt)
+            self.dialogue_manager.update(dt)
             
             # 描画
             self.render()
