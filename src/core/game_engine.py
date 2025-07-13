@@ -84,13 +84,6 @@ class GameEngine:
         
         # roadエリアのNPC
         self.npcs["road"] = []
-        
-        # roadエリアのオーキド（初期位置は画面下の画面外に配置）
-        road_okd_x = 9 * GameConfig.TILE_SIZE * GameConfig.SCALE  # 移動先と同じX座標
-        road_okd_y = 38 * GameConfig.TILE_SIZE * GameConfig.SCALE  # 画面外の下部
-        road_okd = NPC(self.resource_manager, "okd", road_okd_x, road_okd_y, GameConfig.OKD_IMG)
-        road_okd.visible = False  # 初期状態では非表示
-        self.npcs["road"].append(road_okd)
 
     def handle_events(self):
         """イベント処理"""
@@ -150,12 +143,6 @@ class GameEngine:
                     # ラボに遷移した場合、has_visited_labフラグを設定
                     if transition_target == "lab":
                         self.player.has_visited_lab = True
-                        
-                        # roadエリアのオーキドを表示可能にする
-                        for npc in self.npcs.get("road", []):
-                            if npc.npc_id == "okd":
-                                npc.visible = True
-                                break
                     
                     return
                 
@@ -166,9 +153,6 @@ class GameEngine:
                 
                 if encounter_triggered:
                     self._start_battle()
-                
-                # イベントチェック
-                self._check_events()
     
     def _check_npc_interaction(self):
         """NPCとの相互作用をチェック"""
@@ -189,51 +173,8 @@ class GameEngine:
                 self.dialogue_manager.start_dialogue(dialogue)
                 break
     
-    def _check_events(self):
-        """イベントの発生をチェック"""
-        player_center_x, player_center_y = self.player.get_center_position()
-        
-        # プレイヤーの位置をタイル座標に変換
-        current_map = self.map_transition_manager.get_current_map(self.tmx_map)
-        tile_x = int(player_center_x / current_map.scaled_tile_width)
-        tile_y = int(player_center_y / current_map.scaled_tile_height)
-        
-        # roadエリアでのオーキドの移動イベント：(10,35)または(11,35)に移動したとき
-        if not (self.map_transition_manager.is_single_map() and 
-                self.map_transition_manager.single_map):
-            # 結合マップ（roadエリア）でのイベントチェック
-            # ラボに訪問済みでイベントがまだ発生していない場合のみ
-            if self.player.has_visited_lab and \
-               ((tile_x == 10 and tile_y == 35) or (tile_x == 11 and tile_y == 35)) and \
-               "okd_walk_event" not in self.events_triggered:
-                self._trigger_okd_walk_event()
-                self.events_triggered.add("okd_walk_event")
     
-    def _trigger_okd_walk_event(self):
-        """オーキドの歩行イベントを発生"""
-        # roadエリアのオーキドを取得
-        okd = None
-        for npc in self.npcs.get("road", []):
-            if npc.npc_id == "okd":
-                okd = npc
-                break
-        
-        if okd:
-            # プレイヤーの現在位置を取得
-            player_center_x, player_center_y = self.player.get_center_position()
-            current_map = self.map_transition_manager.get_current_map(self.tmx_map)
-            player_tile_x = int(player_center_x / current_map.scaled_tile_width)
-            player_tile_y = int(player_center_y / current_map.scaled_tile_height)
-            
-            # オーキドの移動先を(10,34)に変更
-            target_tile_x = 10
-            target_tile_y = 34
-            
-            # タイル座標をピクセル座標に変換
-            target_x = target_tile_x * GameConfig.TILE_SIZE * GameConfig.SCALE
-            target_y = target_tile_y * GameConfig.TILE_SIZE * GameConfig.SCALE
-            
-            okd.start_move_animation(target_x, target_y)
+    
     
     def _update_npc_animations(self, dt):
         """NPCのアニメーションを更新"""
@@ -377,6 +318,9 @@ class GameEngine:
             
             # NPCアニメーション更新
             self._update_npc_animations(dt)
+            
+            # プレイヤーアニメーション更新
+            self.player.update_animation(dt)
             
             # 描画
             self.render()

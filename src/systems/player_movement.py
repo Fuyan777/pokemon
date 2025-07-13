@@ -87,7 +87,7 @@ class CollisionChecker:
                 return False
         
         # NPCとの衝突をチェック
-        if npcs and current_map.check_npc_collision(new_x, new_y, npcs):
+        if npcs and current_map.check_npc_collision(player.x, player.y, npcs, new_x, new_y):
             return False
         
         return True

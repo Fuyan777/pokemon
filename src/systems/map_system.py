@@ -178,16 +178,45 @@ class SingleMap:
         for npc in npcs:
             npc.draw(screen, offset_x, offset_y)
     
-    def check_npc_collision(self, x, y, npcs):
-        """指定した座標でNPCとの衝突をチェック"""
-        player_rect = pygame.Rect(x, y, 20 * GameConfig.SCALE, 20 * GameConfig.SCALE)
+    def check_npc_collision(self, player_x, player_y, npcs, new_x, new_y):
+        """指定した座標でNPCとの衝突をチェック（現在位置から新しい位置への移動をチェック）"""
+        new_player_rect = pygame.Rect(new_x, new_y, 20 * GameConfig.SCALE, 20 * GameConfig.SCALE)
+        current_player_rect = pygame.Rect(player_x, player_y, 20 * GameConfig.SCALE, 20 * GameConfig.SCALE)
         
         for npc in npcs:
+            # 非表示のNPCとは衝突しない
+            if not npc.visible:
+                continue
+                
             npc_rect = pygame.Rect(npc.x, npc.y, npc.width, npc.height)
-            if player_rect.colliderect(npc_rect):
+            
+            # 現在位置でNPCと重なっている場合は、NPCから離れる方向の移動を許可
+            if current_player_rect.colliderect(npc_rect):
+                # NPCから離れる方向かどうかをチェック
+                current_distance = self._get_distance_squared(
+                    current_player_rect.centerx, current_player_rect.centery,
+                    npc_rect.centerx, npc_rect.centery
+                )
+                new_distance = self._get_distance_squared(
+                    new_player_rect.centerx, new_player_rect.centery,
+                    npc_rect.centerx, npc_rect.centery
+                )
+                
+                # 離れる方向の移動は許可
+                if new_distance >= current_distance:
+                    continue
+            
+            # 新しい位置でNPCと衝突する場合は移動を禁止
+            if new_player_rect.colliderect(npc_rect):
                 return True
         
         return False
+    
+    def _get_distance_squared(self, x1, y1, x2, y2):
+        """2点間の距離の二乗を計算（平方根計算を避けるため）"""
+        dx = x2 - x1
+        dy = y2 - y1
+        return dx * dx + dy * dy
     
     def toggle_debug_mode(self):
         """デバッグモードの切り替え"""
@@ -453,16 +482,45 @@ class TiledMap(CombinedMap):
         for npc in npcs:
             npc.draw(screen, offset_x, offset_y)
     
-    def check_npc_collision(self, x, y, npcs):
-        """指定した座標でNPCとの衝突をチェック"""
-        player_rect = pygame.Rect(x, y, 20 * GameConfig.SCALE, 20 * GameConfig.SCALE)
+    def check_npc_collision(self, player_x, player_y, npcs, new_x, new_y):
+        """指定した座標でNPCとの衝突をチェック（現在位置から新しい位置への移動をチェック）"""
+        new_player_rect = pygame.Rect(new_x, new_y, 20 * GameConfig.SCALE, 20 * GameConfig.SCALE)
+        current_player_rect = pygame.Rect(player_x, player_y, 20 * GameConfig.SCALE, 20 * GameConfig.SCALE)
         
         for npc in npcs:
+            # 非表示のNPCとは衝突しない
+            if not npc.visible:
+                continue
+                
             npc_rect = pygame.Rect(npc.x, npc.y, npc.width, npc.height)
-            if player_rect.colliderect(npc_rect):
+            
+            # 現在位置でNPCと重なっている場合は、NPCから離れる方向の移動を許可
+            if current_player_rect.colliderect(npc_rect):
+                # NPCから離れる方向かどうかをチェック
+                current_distance = self._get_distance_squared(
+                    current_player_rect.centerx, current_player_rect.centery,
+                    npc_rect.centerx, npc_rect.centery
+                )
+                new_distance = self._get_distance_squared(
+                    new_player_rect.centerx, new_player_rect.centery,
+                    npc_rect.centerx, npc_rect.centery
+                )
+                
+                # 離れる方向の移動は許可
+                if new_distance >= current_distance:
+                    continue
+            
+            # 新しい位置でNPCと衝突する場合は移動を禁止
+            if new_player_rect.colliderect(npc_rect):
                 return True
         
         return False
+    
+    def _get_distance_squared(self, x1, y1, x2, y2):
+        """2点間の距離の二乗を計算（平方根計算を避けるため）"""
+        dx = x2 - x1
+        dy = y2 - y1
+        return dx * dx + dy * dy
         
     def get_object_layer(self, name):
         """指定した名前のオブジェクトレイヤーを取得"""

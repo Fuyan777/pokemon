@@ -130,6 +130,17 @@ class Player(pygame.sprite.Sprite):
         self.animation_timer = 0  # アニメーションタイマー
         self.is_moving = False    # 移動中かどうか
         
+        # 移動アニメーション関連
+        self.move_animation = {
+            'active': False,
+            'start_x': 0,
+            'start_y': 0,
+            'target_x': 0,
+            'target_y': 0,
+            'duration': 500,  # ms
+            'elapsed': 0
+        }
+        
         # 技の詳細情報を追加：タイプとPP
         self.pokemon = [Pokemon("ヒトカゲ", "ほのお", 20, 
                                ["ひのこ", "ひっかく"], 
@@ -214,11 +225,51 @@ class Player(pygame.sprite.Sprite):
         """プレイヤーの中心座標を取得"""
         return self.x + self.width / 2, self.y + self.height / 2
     
-    def update_animation(self):
+    def start_move_animation(self, target_x, target_y, duration=500):
+        """プレイヤーの移動アニメーションを開始"""
+        self.move_animation['active'] = True
+        self.move_animation['start_x'] = self.x
+        self.move_animation['start_y'] = self.y
+        self.move_animation['target_x'] = target_x
+        self.move_animation['target_y'] = target_y
+        self.move_animation['duration'] = duration
+        self.move_animation['elapsed'] = 0
+        self.is_moving = True
+
+    def update_move_animation(self, dt):
+        """移動アニメーションを更新"""
+        if not self.move_animation['active']:
+            return
+        
+        self.move_animation['elapsed'] += dt
+        progress = min(1.0, self.move_animation['elapsed'] / self.move_animation['duration'])
+        
+        # 線形補間で位置を計算
+        start_x = self.move_animation['start_x']
+        start_y = self.move_animation['start_y']
+        target_x = self.move_animation['target_x']
+        target_y = self.move_animation['target_y']
+        
+        self.x = start_x + (target_x - start_x) * progress
+        self.y = start_y + (target_y - start_y) * progress
+        
+        # アニメーション完了チェック
+        if progress >= 1.0:
+            self.x = target_x
+            self.y = target_y
+            self.move_animation['active'] = False
+            # is_movingは手動で制御されるのでここでFalseにしない
+
+    def update_animation(self, dt=None):
         """アニメーションフレームを更新"""
+        # 移動アニメーションを更新
+        if dt is not None:
+            self.update_move_animation(dt)
+        
         current_time = pygame.time.get_ticks()
         
-        if self.is_moving:
+        # 移動アニメーション中または通常の移動中は歩行アニメーション
+        if self.is_moving or self.move_animation['active']:
             # 移動中は歩行アニメーション
             if current_time - self.animation_timer > 200:  # 200ms間隔でフレーム変更
                 self.animation_frame = (self.animation_frame + 1) % 3  # 0, 1, 2をループ
